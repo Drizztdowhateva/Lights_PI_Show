@@ -1,5 +1,9 @@
 # WS281X Pattern Runner 🚀
 
+![CI](https://github.com/Drizztdowhateva/Lights_PI_Show/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+
 Beautiful, keyboard-driven LED patterns for WS281X strips — with safe ASCII simulation, headless JSON configs, and easy detached runtime options.
 
 ## Quick Start ✨
