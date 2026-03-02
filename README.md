@@ -32,7 +32,44 @@ sudo .venv/bin/python3 into.py
 Or use the provided launcher which sets up the virtual environment automatically:
 
 ```bash
-./runtime.sh
+sudo ./runtime.sh
+```
+
+### Running without sudo (recommended for daily use)
+
+The `rpi_ws281x` library uses DMA to drive the LED data signal and needs
+access to `/dev/mem`.  Running the whole process as root is one way to
+satisfy that requirement, but it is not the only way.
+
+**Option A — grant Linux capabilities (recommended)**
+
+Run the setup script once after creating the virtual environment:
+
+```bash
+sudo bash setup_permissions.sh
+```
+
+This grants only the minimum capabilities needed (`cap_sys_rawio` and
+`cap_dac_read_search`) to the Python binary inside the venv.  After that,
+any user can drive the LEDs without `sudo`:
+
+```bash
+.venv/bin/python3 into.py --pattern 1
+# or
+./runtime.sh --pattern 1
+```
+
+> **Note:** if you upgrade Python or recreate the virtual environment, run
+> `sudo bash setup_permissions.sh` once more.
+
+**Option B — ASCII simulation (no hardware required)**
+
+Add `--test` to any command to run in safe ASCII simulation mode without
+touching the hardware at all — no `sudo` needed:
+
+```bash
+.venv/bin/python3 into.py --test
+./runtime.sh --test
 ```
 
 ## Note

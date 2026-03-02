@@ -235,6 +235,21 @@ def init_strip() -> None:
             "  • To run without hardware (ASCII simulation): add --test"
         )
 
+    # Probe /dev/mem before handing control to the C library.  Without the
+    # right permissions the C library segfaults rather than raising a catchable
+    # Python exception.  This check works whether the process is root OR the
+    # Python binary has been granted cap_sys_rawio via setup_permissions.sh.
+    try:
+        open("/dev/mem", "rb").close()
+    except PermissionError:
+        raise RuntimeError(
+            "Hardware LED access requires elevated privileges.\n"
+            "  • Run with sudo:          sudo .venv/bin/python3 into.py\n"
+            "  • Or grant capabilities once (no sudo needed afterwards):\n"
+            "        sudo bash setup_permissions.sh\n"
+            "  • To run without hardware (ASCII simulation): add --test"
+        )
+
     strip = Adafruit_NeoPixel(
         LED_COUNT,
         LED_PIN,

@@ -19,7 +19,9 @@ echo "     Press q or Ctrl+C to quit."
 echo ""
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Note: Hardware LED access typically requires root. Re-run with: sudo ./runtime.sh" >&2
+    echo "Note: hardware LED access requires elevated privileges." >&2
+    echo "  • Run with sudo:                sudo ./runtime.sh" >&2
+    echo "  • Or grant capabilities once:   sudo bash setup_permissions.sh" >&2
     echo ""
 fi
 
