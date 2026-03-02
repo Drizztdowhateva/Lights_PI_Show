@@ -227,8 +227,10 @@ def init_strip() -> None:
     global strip
     if not _HAVE_RPI_WS281X:
         raise RuntimeError(
-            "rpi_ws281x not installed. Create a virtualenv and `pip install -r requirements.txt`,\n"
-            "or run in test mode with `--test` to use the ASCII virtual strip."
+            "rpi_ws281x not installed.\n"
+            "  • Run via the launcher (handles venv automatically):  ./runtime.sh\n"
+            "  • Or set up manually: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt\n"
+            "  • To run without hardware (ASCII simulation): add --test"
         )
 
     strip = Adafruit_NeoPixel(

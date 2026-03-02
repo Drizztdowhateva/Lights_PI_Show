@@ -10,6 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+VENV_DIR="$SCRIPT_DIR/.venv"
+
 echo "=== WS281X Pattern Runner ==="
 echo "Tip: Press Ctrl+O while running to print the background (nohup) launch command."
 echo "     Press q or Ctrl+C to quit."
@@ -20,10 +22,24 @@ if [ "$(id -u)" -ne 0 ]; then
     echo ""
 fi
 
+# Create virtual environment if it doesn't exist
+if [ ! -f "$VENV_DIR/bin/python3" ]; then
+    echo "Creating virtual environment at $VENV_DIR ..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+PYTHON="$VENV_DIR/bin/python3"
+PIP="$VENV_DIR/bin/pip"
+
+# Install / sync dependencies
+if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
+    "$PIP" install -r "$SCRIPT_DIR/requirements.txt"
+fi
+
 # If arguments are provided, pass them directly to into.py.
 # Otherwise, use the default headless config for a prompt-free startup.
 if [ "$#" -gt 0 ]; then
-    exec python3 into.py "$@"
+    exec "$PYTHON" into.py "$@"
 else
-    exec python3 into.py --headless --headless-config headless/headless_settings.json
+    exec "$PYTHON" into.py --headless --headless-config headless/headless_settings.json
 fi
