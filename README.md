@@ -1,5 +1,22 @@
 # Lights PI Show
 
+## SOS / Emergency Quick Start
+
+Launch the **Emergency SOS** pattern immediately in the background
+(the `--` separates launcher flags from the pattern arguments passed to `into.py`):
+
+```bash
+sudo python3 runtime.py --nohup -- --pattern 4
+```
+
+To stop it at any time:
+
+```bash
+kill $(cat runtime_live.pid) 2>/dev/null || echo "No running process found"
+```
+
+---
+
 ## Clone Instructions
 
 To clone the repository, use the following command:
