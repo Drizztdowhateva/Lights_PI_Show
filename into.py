@@ -781,11 +781,11 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         if headless_dir.is_dir():
             json_files = sorted([p.name for p in headless_dir.glob('*.json')])
 
-        # Prefer to include the default config near the front if it's in headless/
+        # Exclude the default config from the selectable options so all 4 pattern
+        # configs are shown; the default remains accessible via custom path 'e'.
         default_name = Path(HEADLESS_DEFAULT_CONFIG).name
         if default_name in json_files:
             json_files.remove(default_name)
-            json_files.insert(0, default_name)
 
         options_list = json_files[:4]
         print("Select a headless JSON config:")
