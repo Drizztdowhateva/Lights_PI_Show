@@ -29,6 +29,8 @@ LED_DMA = 10
 LED_INVERT = False
 LED_CHANNEL = 0
 HEADLESS_DEFAULT_CONFIG = "headless/headless_settings.json"
+NOHUP_LOG_FILE = "runtime_live.log"
+NOHUP_PID_FILE = "runtime_live.pid"
 EMERGENCY_DELAY_SECONDS = 0.12
 EMERGENCY_COLORS: list[tuple[str, int]] = [
     ("Red", Color(255, 0, 0)),
@@ -534,7 +536,7 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
     if state.emergency_only:
         command.append("--emergency-only")
 
-    command.extend([">", "runtime_live.log", "2>&1", "&", "echo", "$!", ">", "runtime_live.pid"])
+    command.extend([">", NOHUP_LOG_FILE, "2>&1", "&", "echo", "$!", ">", NOHUP_PID_FILE])
     return " ".join(command)
 
 
@@ -577,10 +579,15 @@ def handle_key(state: AppState, options: RunOptions, key: str) -> bool:
         print_status(state)
         return True
     if key == "\x0f":
-        print("\n=== Heads Up: Background (nohup) launch command ===")
-        print(build_nohup_command(state, options))
-        print("Stop with: kill $(cat runtime_live.pid)  |  Logs: runtime_live.log")
-        print("=====================================================")
+        cmd = build_nohup_command(state, options)
+        sys.stdout.write(
+            "\r\n=== Heads Up: Background (nohup) launch command ===\r\n"
+            + cmd + "\r\n"
+            f"# Stop with: kill $(cat {NOHUP_PID_FILE})\r\n"
+            f"# Logs:      {NOHUP_LOG_FILE}\r\n"
+            "=====================================================\r\n"
+        )
+        sys.stdout.flush()
         return True
     if key == "q":
         return False
