@@ -1,0 +1,3 @@
+# Raspberry Pi hardware LED support — only installed on ARM (Pi) targets.
+# On non-Pi systems this package is skipped; ASCII simulation mode still works.
+rpi-ws281x; platform_machine == "armv7l" or platform_machine == "aarch64"

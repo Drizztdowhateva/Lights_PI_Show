@@ -575,8 +575,10 @@ def handle_key(state: AppState, options: RunOptions, key: str) -> bool:
         print_status(state)
         return True
     if key == "\x0f":
-        print("nohup launch command:")
+        print("\n=== Heads Up: Background (nohup) launch command ===")
         print(build_nohup_command(state, options))
+        print("Stop with: kill $(cat runtime_live.pid)  |  Logs: runtime_live.log")
+        print("=====================================================")
         return True
     if key == "q":
         return False
@@ -795,7 +797,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         if choice in letters:
             idx = letters.index(choice)
             if idx < len(options_list):
-                headless_path = options_list[idx]
+                headless_path = str(headless_dir / options_list[idx])
             else:
                 headless_path = HEADLESS_DEFAULT_CONFIG
         elif choice == 'e':

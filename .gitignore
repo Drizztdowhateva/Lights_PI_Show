@@ -6,8 +6,6 @@ __pycache__/
 venv/
 .env
 .DS_Store
-headless_settings.json
 runtime_live.log
 runtime_live.pid
 runtime_nohup_test.log
-headless/*.json
