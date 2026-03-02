@@ -779,7 +779,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         headless_dir = Path("headless")
         json_files = []
         if headless_dir.is_dir():
-            json_files = sorted([p.name for p in headless_dir.glob('*.json')])
+            json_files = sorted([p.name for p in headless_dir.glob('headless_*.json')])
 
         # Exclude the default config from the selectable options so all 4 pattern
         # configs are shown; the default remains accessible via custom path 'e'.
