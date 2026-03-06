@@ -32,11 +32,17 @@ if [ ! -f "$VENV_DIR/bin/python3" ]; then
 fi
 
 PYTHON="$VENV_DIR/bin/python3"
-PIP="$VENV_DIR/bin/pip"
+
+# Some distros create venvs without a pip shim in bin/. Use python -m pip
+# and bootstrap ensurepip when needed.
+if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+    echo "pip is missing in $VENV_DIR, bootstrapping with ensurepip ..."
+    "$PYTHON" -m ensurepip --upgrade
+fi
 
 # Install / sync dependencies
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
-    "$PIP" install -r "$SCRIPT_DIR/requirements.txt"
+    "$PYTHON" -m pip install -r "$SCRIPT_DIR/requirements.txt"
 fi
 
 # If arguments are provided, pass them directly to into.py.
