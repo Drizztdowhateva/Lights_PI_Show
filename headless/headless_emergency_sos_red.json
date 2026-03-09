@@ -1,6 +1,6 @@
 {
 "test": false,
-  "pattern": "4",
+  "pattern": "-1",
   "speed": "2",
   "chase_color": "1",
   "random_palette": "1",

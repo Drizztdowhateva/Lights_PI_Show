@@ -34,6 +34,12 @@ Launch the emergency SOS pattern immediately in the background using the dedicat
 sudo python3 runtime.py --nohup -- --headless --headless-config headless/headless_emergency_sos_red.json
 ```
 
+Manual trigger (without headless JSON) uses pattern `-1`:
+
+```bash
+sudo -n python3 into.py --pattern -1 --frames 0
+```
+
 To stop it at any time:
 
 ```bash

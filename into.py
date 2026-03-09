@@ -55,10 +55,10 @@ EMERGENCY_SOS_STEPS: list[int] = [
 ]
 
 PATTERN_NAMES: dict[str, str] = {
+    "-1": "Emergency SOS",
     "1": "Chase",
     "2": "Random",
     "3": "Bounce",
-    "4": "Emergency SOS",
     "5": "Comet",
     "6": "Theater Chase",
     "7": "Rainbow Sweep",
@@ -69,13 +69,13 @@ PATTERN_NAMES: dict[str, str] = {
 
 def available_patterns(emergency_only: bool) -> dict[str, str]:
     if emergency_only:
-        return {"4": PATTERN_NAMES["4"]}
+        return {"-1": PATTERN_NAMES["-1"]}
     return dict(PATTERN_NAMES)
 
 
 def normalize_pattern_for_mode(state: "AppState") -> None:
     if state.emergency_only:
-        state.pattern = "4"
+        state.pattern = "-1"
 
 SPEED_LABELS: dict[str, str] = {
     "0": "Constant",
@@ -211,7 +211,8 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
 
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    1 / 2 / 3 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    (-1 available via --pattern/-1 in interactive prompt or headless JSON)
     Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
@@ -225,7 +226,8 @@ Runtime shortcuts:
 
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    1 / 2 / 3 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    (-1 available via --pattern/-1 in interactive prompt or headless JSON)
     Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
     c           Cycle color option for current pattern
@@ -665,7 +667,7 @@ def pattern_step_sparkle(state: AppState) -> None:
 
 
 def get_delay(state: AppState) -> float:
-    if state.pattern == "4":
+    if state.pattern == "-1":
         return EMERGENCY_DELAY_SECONDS
     pattern_map = SPEED_MAP.get(state.pattern, SPEED_MAP["1"])
     return pattern_map.get(state.speed, pattern_map["5"])
@@ -700,7 +702,7 @@ def print_status(state: AppState) -> None:
     elif state.pattern == "3":
         color_name = BOUNCE_COLORS[state.bounce_color][0]
         detail = f"Color: {color_name}"
-    elif state.pattern == "4":
+    elif state.pattern == "-1":
         color_name = EMERGENCY_COLORS[state.emergency_color_index][0]
         detail = f"Color: {color_name} | Panic SOS"
     elif state.pattern == "5":
@@ -1288,7 +1290,7 @@ def run_pattern_step(state: AppState) -> None:
         pattern_step_random(state)
     elif state.pattern == "3":
         pattern_step_bounce(state)
-    elif state.pattern == "4":
+    elif state.pattern == "-1":
         pattern_step_emergency(state)
     elif state.pattern == "5":
         pattern_step_comet(state)
@@ -1514,10 +1516,10 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         return state, options, test_mode, True, headless_path
 
     print("Select a pattern:")
+    print("-1. Emergency SOS")
     print("1. Chase")
     print("2. Random")
     print("3. Bounce")
-    print("4. Emergency SOS")
     print("5. Comet")
     print("6. Theater Chase")
     print("7. Rainbow Sweep")
@@ -1572,7 +1574,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Switch options:\n"
-            "  --pattern {1,2,3,4,5,6,7,8,9}  Startup pattern\n"
+            "  --pattern {-1,1,2,3,5,6,7,8,9} Startup pattern\n"
             "  --speed {0,1,2,3,4,5,6,7,8,9}  Startup speed (0=Constant, 1..9=levels)\n"
             "  --chase-color {1,2,3,4}    Chase color option\n"
             "  --random-palette {1,2,3}   Random palette option\n"
@@ -1593,13 +1595,14 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
+            "  1..3/5..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
+            "  SOS pattern is -1 (set via --pattern, interactive prompt, or headless JSON).\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
-    parser.add_argument("--pattern", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup pattern")
+    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "5", "6", "7", "8", "9"], help="Startup pattern")
     parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4"], help="Chase color option")
     parser.add_argument("--random-palette", choices=["1", "2", "3"], help="Random palette option")
