@@ -1,8 +1,10 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 import random
+import re
 import select
 import shutil
 import signal
@@ -57,21 +59,23 @@ PATTERN_NAMES: dict[str, str] = {
     "2": "Random",
     "3": "Bounce",
     "4": "Emergency SOS",
+    "5": "Comet",
+    "6": "Theater Chase",
+    "7": "Rainbow Sweep",
+    "8": "Pulse",
+    "9": "Sparkle",
 }
 
 
 def available_patterns(emergency_only: bool) -> dict[str, str]:
     if emergency_only:
         return {"4": PATTERN_NAMES["4"]}
-    return {k: v for k, v in PATTERN_NAMES.items() if k != "4"}
+    return dict(PATTERN_NAMES)
 
 
 def normalize_pattern_for_mode(state: "AppState") -> None:
     if state.emergency_only:
         state.pattern = "4"
-        return
-    if state.pattern == "4":
-        state.pattern = "1"
 
 SPEED_LABELS: dict[str, str] = {
     "0": "Constant",
@@ -123,6 +127,66 @@ SPEED_MAP: dict[str, dict[str, float]] = {
         "8": 0.008,
         "9": 0.004,
     },
+    "5": {
+        "0": 0.0,
+        "1": 0.09,
+        "2": 0.075,
+        "3": 0.06,
+        "4": 0.045,
+        "5": 0.03,
+        "6": 0.02,
+        "7": 0.014,
+        "8": 0.009,
+        "9": 0.006,
+    },
+    "6": {
+        "0": 0.0,
+        "1": 0.16,
+        "2": 0.13,
+        "3": 0.10,
+        "4": 0.08,
+        "5": 0.06,
+        "6": 0.04,
+        "7": 0.03,
+        "8": 0.02,
+        "9": 0.014,
+    },
+    "7": {
+        "0": 0.0,
+        "1": 0.10,
+        "2": 0.08,
+        "3": 0.06,
+        "4": 0.05,
+        "5": 0.04,
+        "6": 0.03,
+        "7": 0.02,
+        "8": 0.014,
+        "9": 0.010,
+    },
+    "8": {
+        "0": 0.0,
+        "1": 0.08,
+        "2": 0.07,
+        "3": 0.06,
+        "4": 0.05,
+        "5": 0.04,
+        "6": 0.03,
+        "7": 0.02,
+        "8": 0.014,
+        "9": 0.010,
+    },
+    "9": {
+        "0": 0.0,
+        "1": 0.22,
+        "2": 0.18,
+        "3": 0.14,
+        "4": 0.11,
+        "5": 0.08,
+        "6": 0.06,
+        "7": 0.045,
+        "8": 0.03,
+        "9": 0.02,
+    },
 }
 
 CHASE_COLORS: dict[str, tuple[str, int]] = {
@@ -147,7 +211,8 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
 
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 4 Switch pattern (1=Chase, 2=Random, 3=Bounce, 4=SOS)
+    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
     + / -       Brightness up/down
@@ -160,7 +225,8 @@ Runtime shortcuts:
 
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3   Switch pattern (1=Chase, 2=Random, 3=Bounce)
+    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
     c           Cycle color option for current pattern
     h           Show this shortcuts help again
@@ -198,6 +264,9 @@ class AppState:
     chase_position: int = 0
     bounce_position: int = 0
     bounce_direction: int = 1
+    comet_position: int = 0
+    theater_phase: int = 0
+    pulse_step: int = 0
     rainbow_offset: int = 0
 
 
@@ -527,6 +596,74 @@ def pattern_step_emergency(state: AppState) -> None:
         state.emergency_color_index = 0
 
 
+def pattern_step_comet(state: AppState) -> None:
+    active_strip = get_strip()
+    clear_strip(show_now=False)
+    try:
+        head = state.comet_position % LED_COUNT
+        for trail in range(10):
+            idx = (head - trail) % LED_COUNT
+            intensity = max(0, 255 - trail * 28)
+            active_strip.setPixelColor(idx, Color(intensity, intensity // 6, 0))
+        active_strip.show()
+        state.comet_position = (state.comet_position + 1) % LED_COUNT
+    except Exception as e:
+        print(f"[ERROR] Comet pattern step failed: {e}")
+
+
+def pattern_step_theater_chase(state: AppState) -> None:
+    active_strip = get_strip()
+    clear_strip(show_now=False)
+    try:
+        for i in range(LED_COUNT):
+            if (i + state.theater_phase) % 3 == 0:
+                active_strip.setPixelColor(i, Color(200, 200, 220))
+        active_strip.show()
+        state.theater_phase = (state.theater_phase + 1) % 3
+    except Exception as e:
+        print(f"[ERROR] Theater chase pattern step failed: {e}")
+
+
+def pattern_step_rainbow_sweep(state: AppState) -> None:
+    active_strip = get_strip()
+    try:
+        for i in range(LED_COUNT):
+            color_index = (i * 256 // LED_COUNT + state.rainbow_offset) & 255
+            active_strip.setPixelColor(i, wheel(color_index))
+        active_strip.show()
+        state.rainbow_offset = (state.rainbow_offset + 4) & 255
+    except Exception as e:
+        print(f"[ERROR] Rainbow sweep pattern step failed: {e}")
+
+
+def pattern_step_pulse(state: AppState) -> None:
+    active_strip = get_strip()
+    try:
+        phase = (state.pulse_step % 256) / 255.0
+        brightness = int((math.sin(phase * math.tau) + 1.0) * 0.5 * 255)
+        color = Color(brightness, 0, max(0, brightness // 3))
+        for i in range(LED_COUNT):
+            active_strip.setPixelColor(i, color)
+        active_strip.show()
+        state.pulse_step = (state.pulse_step + 5) % 256
+    except Exception as e:
+        print(f"[ERROR] Pulse pattern step failed: {e}")
+
+
+def pattern_step_sparkle(state: AppState) -> None:
+    active_strip = get_strip()
+    clear_strip(show_now=False)
+    try:
+        sparkle_count = max(1, LED_COUNT // 10)
+        for _ in range(sparkle_count):
+            idx = random.randint(0, LED_COUNT - 1)
+            twinkle = random.randint(120, 255)
+            active_strip.setPixelColor(idx, Color(twinkle, twinkle, twinkle))
+        active_strip.show()
+    except Exception as e:
+        print(f"[ERROR] Sparkle pattern step failed: {e}")
+
+
 def get_delay(state: AppState) -> float:
     if state.pattern == "4":
         return EMERGENCY_DELAY_SECONDS
@@ -563,9 +700,19 @@ def print_status(state: AppState) -> None:
     elif state.pattern == "3":
         color_name = BOUNCE_COLORS[state.bounce_color][0]
         detail = f"Color: {color_name}"
-    else:
+    elif state.pattern == "4":
         color_name = EMERGENCY_COLORS[state.emergency_color_index][0]
         detail = f"Color: {color_name} | Panic SOS"
+    elif state.pattern == "5":
+        detail = "Color: Amber Trail"
+    elif state.pattern == "6":
+        detail = "Color: Cool White Slots"
+    elif state.pattern == "7":
+        detail = "Color: Full Rainbow"
+    elif state.pattern == "8":
+        detail = "Color: Red Pulse"
+    else:
+        detail = "Color: White Sparkles"
 
     brightness_pct = int((max(0, state.brightness) / max(1, state.max_brightness)) * 100)
     print(f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness} ({brightness_pct}%) | {detail}")
@@ -578,7 +725,36 @@ def maybe_read_key() -> str | None:
 
     key = sys.stdin.read(1)
     if key != "\x1b":
+        # Basic terminal fallback for some Ctrl+digit combos.
+        ctrl_char_speed_map = {
+            "\x00": "CTRL_2",
+            "\x1c": "CTRL_4",
+            "\x1d": "CTRL_5",
+            "\x1e": "CTRL_6",
+            "\x1f": "CTRL_7",
+            "\x7f": "CTRL_8",
+        }
+        if key in ctrl_char_speed_map:
+            return ctrl_char_speed_map[key]
         return key
+
+    # Read the full escape sequence so we can detect modified key combos
+    # like Ctrl+digit from terminals that emit CSI-u keycodes.
+    sequence = key
+    while True:
+        ready, _, _ = select.select([sys.stdin], [], [], 0.001)
+        if not ready:
+            break
+        sequence += sys.stdin.read(1)
+        if len(sequence) >= 24:
+            break
+
+    ctrl_digit_match = re.match(r"\x1b\[(\d+);5u$", sequence)
+    if ctrl_digit_match:
+        codepoint = int(ctrl_digit_match.group(1))
+        char = chr(codepoint)
+        if char.isdigit():
+            return f"CTRL_{char}"
 
     # Escape sequences should not interfere with runtime controls.
     return None
@@ -1047,6 +1223,13 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
 def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_settings: Any) -> bool:
     allowed = available_patterns(state.emergency_only)
 
+    if key.startswith("CTRL_") and len(key) == 6:
+        speed_key = key[-1]
+        if speed_key in SPEED_LABELS:
+            state.speed = speed_key
+            print_status(state)
+            return True
+
     if key in allowed:
         state.pattern = key
         print_status(state)
@@ -1098,6 +1281,29 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
     return True
 
 
+def run_pattern_step(state: AppState) -> None:
+    if state.pattern == "1":
+        pattern_step_chase(state)
+    elif state.pattern == "2":
+        pattern_step_random(state)
+    elif state.pattern == "3":
+        pattern_step_bounce(state)
+    elif state.pattern == "4":
+        pattern_step_emergency(state)
+    elif state.pattern == "5":
+        pattern_step_comet(state)
+    elif state.pattern == "6":
+        pattern_step_theater_chase(state)
+    elif state.pattern == "7":
+        pattern_step_rainbow_sweep(state)
+    elif state.pattern == "8":
+        pattern_step_pulse(state)
+    elif state.pattern == "9":
+        pattern_step_sparkle(state)
+    else:
+        pattern_step_chase(state)
+
+
 def run_loop(state: AppState, options: RunOptions) -> None:
     if isinstance(get_strip(), VirtualStrip):
         print("Test mode: realtime ASCII overlay (press q to quit).")
@@ -1114,14 +1320,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
     if not sys.stdin.isatty():
         while True:
             apply_pi_input_response(state)
-            if state.pattern == "1":
-                pattern_step_chase(state)
-            elif state.pattern == "2":
-                pattern_step_random(state)
-            elif state.pattern == "3":
-                pattern_step_bounce(state)
-            else:
-                pattern_step_emergency(state)
+            run_pattern_step(state)
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
@@ -1142,14 +1341,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                 break
 
             apply_pi_input_response(state)
-            if state.pattern == "1":
-                pattern_step_chase(state)
-            elif state.pattern == "2":
-                pattern_step_random(state)
-            elif state.pattern == "3":
-                pattern_step_bounce(state)
-            else:
-                pattern_step_emergency(state)
+            run_pattern_step(state)
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
@@ -1326,6 +1518,11 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     print("2. Random")
     print("3. Bounce")
     print("4. Emergency SOS")
+    print("5. Comet")
+    print("6. Theater Chase")
+    print("7. Rainbow Sweep")
+    print("8. Pulse")
+    print("9. Sparkle")
 
     pattern = ask_choice("Enter pattern", "1", PATTERN_NAMES)
     speed = ask_choice("Enter speed (0=Constant, 1..9=Level)", "5", SPEED_LABELS)
@@ -1375,7 +1572,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Switch options:\n"
-            "  --pattern {1,2,3,4}        Startup pattern\n"
+            "  --pattern {1,2,3,4,5,6,7,8,9}  Startup pattern\n"
             "  --speed {0,1,2,3,4,5,6,7,8,9}  Startup speed (0=Constant, 1..9=levels)\n"
             "  --chase-color {1,2,3,4}    Chase color option\n"
             "  --random-palette {1,2,3}   Random palette option\n"
@@ -1396,13 +1593,13 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
+            "  1..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
-    parser.add_argument("--pattern", choices=["1", "2", "3", "4"], help="Startup pattern")
+    parser.add_argument("--pattern", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup pattern")
     parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4"], help="Chase color option")
     parser.add_argument("--random-palette", choices=["1", "2", "3"], help="Random palette option")
