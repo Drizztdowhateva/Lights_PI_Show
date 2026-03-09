@@ -151,8 +151,8 @@ Runtime shortcuts:
     s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
     + / -       Brightness up/down
-        Alt+M       Open support task manager (add/edit/done/send/unsend)
-        Alt+O       Print nohup command for current settings
+        m / M       Open support task manager (add/edit/done/send/unsend)
+        o / O       Print nohup command for current settings
   h           Show this shortcuts help again
   q           Quit
   Ctrl+C      Quit
@@ -580,20 +580,7 @@ def maybe_read_key() -> str | None:
     if key != "\x1b":
         return key
 
-    # Parse common Alt key escape sequences.
-    sequence = key
-    for _ in range(7):
-        extra_ready, _, _ = select.select([sys.stdin], [], [], 0.002)
-        if not extra_ready:
-            break
-        sequence += sys.stdin.read(1)
-
-    if sequence in {"\x1bm", "\x1bM"}:
-        return "ALT_M"
-    if sequence in {"\x1bo", "\x1bO"}:
-        return "ALT_O"
-
-    # Unrecognized escape sequences should not interfere with runtime controls.
+    # Escape sequences should not interfere with runtime controls.
     return None
 
 
@@ -1091,11 +1078,11 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print(SHORTCUTS_TEXT)
         print_status(state)
         return True
-    if key == "ALT_M":
+    if key in {"m", "M"}:
         prompt_support_ticket_manager(fd, old_settings, state)
         print_status(state)
         return True
-    if key == "ALT_O":
+    if key in {"o", "O"}:
         cmd = build_nohup_command(state, options)
         sys.stdout.write(
             "\r\n=== Heads Up: Background (nohup) launch command ===\r\n"
@@ -1409,7 +1396,7 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, Alt+M support manager (add/edit/done/send/unsend), Alt+O nohup, h help, q quit\n"
+            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
