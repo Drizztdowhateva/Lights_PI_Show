@@ -103,7 +103,7 @@ python3 into.py --headless --headless-config headless/headless_settings.json
 
 Use the runtime support manager to track ideas/features as todo tasks and hand them off to Copilot.
 
-- Open manager while runtime is active: `Alt+F1` (or `Ctrl+M` fallback)
+- Open manager while runtime is active: `Alt+M`
 - Actions: `a` add, `l` list, `e` edit, `d` done, `r` reopen, `x` delete, `s` send, `u` unsend
 - Priority support: `high`, `med`, `low` (open tasks are sorted by priority first)
 

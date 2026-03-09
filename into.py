@@ -151,9 +151,8 @@ Runtime shortcuts:
     s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
     + / -       Brightness up/down
-    Alt+F1      Open support task manager (add/edit/done/send/unsend)
-    Ctrl+M      Support manager fallback (tmux-safe)
-    Ctrl+O      Print nohup command for current settings
+        Alt+M       Open support task manager (add/edit/done/send/unsend)
+        Alt+O       Print nohup command for current settings
   h           Show this shortcuts help again
   q           Quit
   Ctrl+C      Quit
@@ -581,7 +580,7 @@ def maybe_read_key() -> str | None:
     if key != "\x1b":
         return key
 
-    # Parse escape sequences for function keys (works in tmux and common xterm modes).
+    # Parse common Alt key escape sequences.
     sequence = key
     for _ in range(7):
         extra_ready, _, _ = select.select([sys.stdin], [], [], 0.002)
@@ -589,10 +588,10 @@ def maybe_read_key() -> str | None:
             break
         sequence += sys.stdin.read(1)
 
-    if sequence in {"\x1bOP", "\x1b[11~", "\x1b[[A"}:
-        return "F1"
-    if sequence in {"\x1b\x1bOP", "\x1b\x1b[11~", "\x1b\x1b[[A"}:
-        return "ALT_F1"
+    if sequence in {"\x1bm", "\x1bM"}:
+        return "ALT_M"
+    if sequence in {"\x1bo", "\x1bO"}:
+        return "ALT_O"
 
     # Unrecognized escape sequences should not interfere with runtime controls.
     return None
@@ -1092,20 +1091,11 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print(SHORTCUTS_TEXT)
         print_status(state)
         return True
-    if key == "ALT_F1":
+    if key == "ALT_M":
         prompt_support_ticket_manager(fd, old_settings, state)
         print_status(state)
         return True
-    if key == "F1" and "TMUX" not in os.environ:
-        # Outside tmux, allow F1 as alias in terminals that collapse Alt+F1.
-        prompt_support_ticket_manager(fd, old_settings, state)
-        print_status(state)
-        return True
-    if key == "\r":
-        prompt_support_ticket_manager(fd, old_settings, state)
-        print_status(state)
-        return True
-    if key == "\x0f":
+    if key == "ALT_O":
         cmd = build_nohup_command(state, options)
         sys.stdout.write(
             "\r\n=== Heads Up: Background (nohup) launch command ===\r\n"
@@ -1419,7 +1409,7 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, Alt+F1 support manager (add/edit/done/send/unsend), Ctrl+M fallback, Ctrl+O nohup, h help, q quit\n"
+            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, Alt+M support manager (add/edit/done/send/unsend), Alt+O nohup, h help, q quit\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"

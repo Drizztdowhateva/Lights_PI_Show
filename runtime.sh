@@ -14,7 +14,7 @@ cd "$SCRIPT_DIR"
 VENV_DIR="$SCRIPT_DIR/.venv"
 
 echo "=== WS281X Pattern Runner ==="
-echo "Tip: Press Ctrl+O while running to print the background (nohup) launch command."
+echo "Tip: Press Alt+O while running to print the background (nohup) launch command."
 echo "     Press q or Ctrl+C to quit."
 echo ""
 
