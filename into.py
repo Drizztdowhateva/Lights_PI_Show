@@ -58,6 +58,7 @@ PATTERN_NAMES: dict[str, str] = {
     "-1": "Emergency SOS",
     "1": "Chase",
     "2": "Random",
+    "4": "Random",
     "3": "Bounce",
     "5": "Comet",
     "6": "Theater Chase",
@@ -104,6 +105,18 @@ SPEED_MAP: dict[str, dict[str, float]] = {
         "9": 0.006,
     },
     "2": {
+        "0": 0.0,
+        "1": 0.45,
+        "2": 0.35,
+        "3": 0.27,
+        "4": 0.20,
+        "5": 0.12,
+        "6": 0.08,
+        "7": 0.06,
+        "8": 0.04,
+        "9": 0.02,
+    },
+    "4": {
         "0": 0.0,
         "1": 0.45,
         "2": 0.35,
@@ -211,8 +224,8 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
 
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 5 / 6 / 7 / 8 / 9 Switch pattern
-    (-1 available via --pattern/-1 in interactive prompt or headless JSON)
+    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
     Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
@@ -226,8 +239,8 @@ Runtime shortcuts:
 
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 5 / 6 / 7 / 8 / 9 Switch pattern
-    (-1 available via --pattern/-1 in interactive prompt or headless JSON)
+    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
     Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
     s           Cycle speed (0=Constant, 1-9=Level)
     c           Cycle color option for current pattern
@@ -696,7 +709,7 @@ def print_status(state: AppState) -> None:
     if state.pattern == "1":
         color_name = CHASE_COLORS[state.chase_color][0]
         detail = f"Color: {color_name}"
-    elif state.pattern == "2":
+    elif state.pattern in {"2", "4"}:
         palette_name = RANDOM_PALETTES[state.random_palette][0]
         detail = f"Palette: {palette_name}"
     elif state.pattern == "3":
@@ -1185,8 +1198,6 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
         "nohup",
         sys.executable,
         "into.py",
-        "--pattern",
-        state.pattern,
         "--speed",
         state.speed,
         "--chase-color",
@@ -1208,6 +1219,11 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
         "--analog-max",
         str(state.analog_max),
     ]
+
+    if state.pattern == "-1":
+        command.extend(["--SOS"])
+    else:
+        command.extend(["--pattern", state.pattern])
 
     if options.frames > 0:
         command.extend(["--frames", str(options.frames)])
@@ -1286,7 +1302,7 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
 def run_pattern_step(state: AppState) -> None:
     if state.pattern == "1":
         pattern_step_chase(state)
-    elif state.pattern == "2":
+    elif state.pattern in {"2", "4"}:
         pattern_step_random(state)
     elif state.pattern == "3":
         pattern_step_bounce(state)
@@ -1520,6 +1536,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     print("1. Chase")
     print("2. Random")
     print("3. Bounce")
+    print("4. Random")
     print("5. Comet")
     print("6. Theater Chase")
     print("7. Rainbow Sweep")
@@ -1574,7 +1591,8 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Switch options:\n"
-            "  --pattern {-1,1,2,3,5,6,7,8,9} Startup pattern\n"
+            "  --pattern {-1,1,2,3,4,5,6,7,8,9} Startup pattern\n"
+            "  --SOS, --sos               Shortcut to emergency SOS mode\n"
             "  --speed {0,1,2,3,4,5,6,7,8,9}  Startup speed (0=Constant, 1..9=levels)\n"
             "  --chase-color {1,2,3,4}    Chase color option\n"
             "  --random-palette {1,2,3}   Random palette option\n"
@@ -1595,14 +1613,15 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1..3/5..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
-            "  SOS pattern is -1 (set via --pattern, interactive prompt, or headless JSON).\n"
+            "  1..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
+            "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or headless JSON).\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
-    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "5", "6", "7", "8", "9"], help="Startup pattern")
+    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup pattern")
+    parser.add_argument("--SOS", "--sos", dest="sos", action="store_true", help="Shortcut for emergency SOS mode")
     parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4"], help="Chase color option")
     parser.add_argument("--random-palette", choices=["1", "2", "3"], help="Random palette option")
@@ -1659,6 +1678,7 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.duration_seconds is not None,
             args.start_delay_seconds is not None,
             args.emergency_only,
+            args.sos,
         ]
     )
 
@@ -1676,9 +1696,11 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         input_pin=args.pi_input_pin if args.pi_input_pin is not None else 23,
         analog_path=args.analog_path or "/sys/bus/iio/devices/iio:device0/in_voltage0_raw",
         analog_max=max(1, args.analog_max if args.analog_max is not None else 4095),
-        emergency_only=bool(args.emergency_only),
+        emergency_only=bool(args.emergency_only or args.sos),
     )
     state.brightness = min(state.brightness, state.max_brightness)
+    if args.sos:
+        state.pattern = "-1"
     normalize_pattern_for_mode(state)
     options = RunOptions(
         frames=max(0, args.frames if args.frames is not None else 0),
@@ -1719,6 +1741,9 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
     if args.start_delay_seconds is not None:
         options.start_delay_seconds = max(0.0, args.start_delay_seconds)
     if args.emergency_only:
+        state.emergency_only = True
+    if args.sos:
+        state.pattern = "-1"
         state.emergency_only = True
     normalize_pattern_for_mode(state)
     return state, options

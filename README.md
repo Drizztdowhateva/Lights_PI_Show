@@ -34,11 +34,28 @@ Launch the emergency SOS pattern immediately in the background using the dedicat
 sudo python3 runtime.py --nohup -- --headless --headless-config headless/headless_emergency_sos_red.json
 ```
 
+Shortcut using the shell launcher:
+
+```bash
+sudo ./runtime.sh --SOS
+```
+
+Detached (nohup) trigger via runtime helper:
+
+```bash
+sudo python3 runtime.py --nohup -- --SOS
+```
+
 Manual trigger (without headless JSON) uses pattern `-1`:
 
 ```bash
 sudo -n python3 into.py --pattern -1 --frames 0
 ```
+
+Pattern note:
+
+- `4` now maps to `Random`.
+- Emergency SOS is explicit via `--SOS` (or `--pattern -1`).
 
 To stop it at any time:
 
@@ -98,6 +115,19 @@ Hardware run:
 ```bash
 sudo -n python3 into.py --pattern 1 --speed 3 --frames 0
 ```
+
+Pattern selector values:
+
+- `1` Chase
+- `2` Random
+- `3` Bounce
+- `4` Random
+- `5` Comet
+- `6` Theater Chase
+- `7` Rainbow Sweep
+- `8` Pulse
+- `9` Sparkle
+- `-1` Emergency SOS (use `--SOS` shortcut)
 
 Headless config run:
 

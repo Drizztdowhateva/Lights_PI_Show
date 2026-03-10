@@ -94,6 +94,7 @@ def main() -> None:
         print(f"PID:     {pid}")
         print(f"Logs:    {LOG_FILE}")
         print(f"Stop:    kill $(cat {PID_FILE})")
+        print("SOS:     sudo ./runtime.sh --SOS")
         print("=====================================================")
     else:
         result = subprocess.run(cmd)

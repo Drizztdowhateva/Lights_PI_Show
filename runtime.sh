@@ -4,11 +4,12 @@
 #   sudo ./runtime.sh                    # prompt for headless option, then start
 #   sudo ./runtime.sh --pattern 1 ...   # pass args directly to into.py
 #   sudo ./runtime.sh --headless        # skip prompt, use default headless config
+#   sudo ./runtime.sh --SOS             # emergency SOS shortcut
 #   sudo ./runtime.sh --test            # ASCII simulation (no hardware needed)
 
 set -eu
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
