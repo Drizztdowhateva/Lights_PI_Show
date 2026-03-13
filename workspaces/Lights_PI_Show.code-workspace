@@ -1,0 +1,9 @@
+{
+	"folders": [
+		{
+			"uri": "vscode-remote://ssh-remote+192.168.60.221/home/blackmox/code/Lights_PI_Show"
+		}
+	],
+	"remoteAuthority": "ssh-remote+192.168.60.221",
+	"settings": {}
+}

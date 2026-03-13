@@ -65,7 +65,13 @@ PATTERN_NAMES: dict[str, str] = {
     "7": "Rainbow Sweep",
     "8": "Pulse",
     "9": "Sparkle",
+    "10": "Fire Flame",
+    "11": "Meteor Shower",
+    "12": "Twinkle Stars",
 }
+
+# Ordered list of all pattern keys for left/right arrow cycling (SOS excluded)
+PATTERN_CYCLE_ORDER: list[str] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
 
 def available_patterns(emergency_only: bool) -> dict[str, str]:
@@ -200,6 +206,42 @@ SPEED_MAP: dict[str, dict[str, float]] = {
         "8": 0.03,
         "9": 0.02,
     },
+    "10": {
+        "0": 0.0,
+        "1": 0.10,
+        "2": 0.08,
+        "3": 0.065,
+        "4": 0.05,
+        "5": 0.035,
+        "6": 0.025,
+        "7": 0.018,
+        "8": 0.012,
+        "9": 0.008,
+    },
+    "11": {
+        "0": 0.0,
+        "1": 0.09,
+        "2": 0.075,
+        "3": 0.06,
+        "4": 0.045,
+        "5": 0.03,
+        "6": 0.02,
+        "7": 0.014,
+        "8": 0.009,
+        "9": 0.006,
+    },
+    "12": {
+        "0": 0.0,
+        "1": 0.20,
+        "2": 0.16,
+        "3": 0.12,
+        "4": 0.09,
+        "5": 0.07,
+        "6": 0.05,
+        "7": 0.035,
+        "8": 0.025,
+        "9": 0.015,
+    },
 }
 
 CHASE_COLORS: dict[str, tuple[str, int]] = {
@@ -207,12 +249,18 @@ CHASE_COLORS: dict[str, tuple[str, int]] = {
     "2": ("Green", Color(0, 255, 0)),
     "3": ("Blue", Color(0, 0, 255)),
     "4": ("Rainbow", 0),
+    "5": ("Custom", 0),  # uses state.custom_color
 }
 
 RANDOM_PALETTES: dict[str, tuple[str, list[int] | None]] = {
     "1": ("Any RGB", None),
     "2": ("Warm", [Color(255, 0, 0), Color(255, 120, 0), Color(255, 255, 0)]),
     "3": ("Cool", [Color(0, 255, 255), Color(0, 0, 255), Color(180, 0, 255)]),
+    "4": ("Pastel", [Color(255, 182, 193), Color(152, 251, 152), Color(216, 191, 216), Color(255, 218, 185)]),
+    "5": ("Neon", [Color(255, 0, 144), Color(0, 255, 255), Color(57, 255, 20), Color(255, 140, 0)]),
+    "6": ("Ocean", [Color(0, 0, 139), Color(0, 128, 128), Color(0, 206, 209), Color(240, 248, 255)]),
+    "7": ("Fire", [Color(255, 0, 0), Color(255, 80, 0), Color(255, 200, 0), Color(200, 20, 0)]),
+    "8": ("Forest", [Color(0, 100, 0), Color(50, 205, 50), Color(101, 67, 33), Color(154, 205, 50)]),
 }
 
 BOUNCE_COLORS: dict[str, tuple[str, int]] = {
@@ -220,30 +268,123 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
     "2": ("Purple", Color(180, 0, 255)),
     "3": ("White", Color(255, 255, 255)),
     "4": ("Rainbow", 0),
+    "5": ("Custom", 0),  # uses state.custom_color
 }
+
+# Named colors for CLI custom color selection (name → packed 0xRRGGBB int)
+NAMED_COLORS: dict[str, int] = {
+    "red":         Color(255,   0,   0),
+    "green":       Color(  0, 255,   0),
+    "blue":        Color(  0,   0, 255),
+    "white":       Color(255, 255, 255),
+    "gold":        Color(255, 215,   0),
+    "orange":      Color(255, 140,   0),
+    "yellow":      Color(255, 255,   0),
+    "purple":      Color(128,   0, 128),
+    "violet":      Color(148,   0, 211),
+    "magenta":     Color(255,   0, 255),
+    "cyan":        Color(  0, 255, 255),
+    "teal":        Color(  0, 128, 128),
+    "pink":        Color(255, 105, 180),
+    "coral":       Color(255,  80,  80),
+    "salmon":      Color(255, 140, 105),
+    "mint":        Color( 60, 255, 180),
+    "lime":        Color( 50, 205,  50),
+    "sky":         Color(135, 206, 235),
+    "lavender":    Color(230, 190, 255),
+    "indigo":      Color( 75,   0, 130),
+    "crimson":     Color(220,  20,  60),
+    "amber":       Color(255, 191,   0),
+    "turquoise":   Color( 64, 224, 208),
+    "peach":       Color(255, 218, 185),
+    "rose":        Color(255,   0, 127),
+    "bronze":      Color(205, 127,  50),
+    "maroon":      Color(128,   0,   0),
+    "olive":       Color(128, 128,   0),
+    "slate":       Color(112, 128, 144),
+    "chartreuse":  Color(127, 255,   0),
+}
+
+
+def parse_custom_color(s: str) -> int:
+    """Parse a color string into a packed int.
+
+    Accepts:
+      - Named: 'gold', 'cyan' (case-insensitive, from NAMED_COLORS)
+      - Hex:   '#FF8800' or 'FF8800'
+      - CSV:   '255,136,0'
+    """
+    cleaned = s.strip().lower()
+    if cleaned in NAMED_COLORS:
+        return NAMED_COLORS[cleaned]
+    hex_clean = cleaned.lstrip("#")
+    if len(hex_clean) == 6 and all(c in "0123456789abcdef" for c in hex_clean):
+        r = int(hex_clean[0:2], 16)
+        g = int(hex_clean[2:4], 16)
+        b = int(hex_clean[4:6], 16)
+        return Color(r, g, b)
+    parts = cleaned.split(",")
+    if len(parts) == 3:
+        try:
+            r, g, b = (int(p.strip()) for p in parts)
+            if all(0 <= v <= 255 for v in (r, g, b)):
+                return Color(r, g, b)
+        except ValueError:
+            pass
+    valid_names = ", ".join(sorted(NAMED_COLORS.keys()))
+    raise ValueError(
+        f"Invalid color: {s!r}\n"
+        f"  Use a name ({valid_names}),\n"
+        f"  a hex value (#RRGGBB), or CSV r,g,b (e.g. 255,0,128)"
+    )
+
+
+def print_named_colors() -> None:
+    """Print all named colors with ANSI 24-bit color swatches."""
+    print("\nNamed colors (use with --custom-color or when prompted):")
+    print("  Format options: name | #RRGGBB | r,g,b")
+    print()
+    names = sorted(NAMED_COLORS.keys())
+    col_width = max(len(n) for n in names) + 2
+    per_row = 3
+    for i in range(0, len(names), per_row):
+        row = names[i:i + per_row]
+        parts = []
+        for name in row:
+            packed = NAMED_COLORS[name]
+            r = (packed >> 16) & 0xFF
+            g = (packed >> 8) & 0xFF
+            b = packed & 0xFF
+            swatch = f"\x1b[48;2;{r};{g};{b}m   \x1b[0m"
+            parts.append(f"{swatch} {name:<{col_width}}")
+        print("  " + "  ".join(parts))
+    print()
+
 
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    1..9 / ← →  Switch pattern (or cycle with arrow keys)
     (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
-    Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
-    s           Cycle speed (0=Constant, 1-9=Level)
-  c           Cycle color option for current pattern
-    + / -       Brightness up/down
-        m / M       Open support task manager (add/edit/done/send/unsend)
-        o / O       Print nohup command for current settings
-  h           Show this shortcuts help again
-  q           Quit
-  Ctrl+C      Quit
+    + / =       Speed up (Level 1-9)
+    -           Speed down
+    ↑ / ↓       Brightness up/down
+    c           Cycle color option for current pattern
+    n           Show named color list
+    m / M       Open support task manager (add/edit/done/send/unsend)
+    o / O       Print nohup command for current settings
+    h           Show this shortcuts help again
+    q           Quit
+    Ctrl+C      Quit
 """.strip()
 
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
-    1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 Switch pattern
+    1..9 / ← →  Switch pattern (or cycle with arrow keys)
     (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
-    Ctrl+1..Ctrl+9 / Ctrl+0 Set speed directly (0=Constant, 1-9=Level)
-    s           Cycle speed (0=Constant, 1-9=Level)
+    + / =       Speed up    -  Speed down
+    ↑ / ↓       Brightness up/down
     c           Cycle color option for current pattern
+    n           Show named color list
     h           Show this shortcuts help again
     q           Quit
     Ctrl+C      Quit
@@ -283,6 +424,16 @@ class AppState:
     theater_phase: int = 0
     pulse_step: int = 0
     rainbow_offset: int = 0
+    custom_color: int = 0  # packed 0xRRGGBB; 0 = use pattern default
+    meteor_position: int = 0
+    fire_heat: list = None  # type: ignore[assignment]
+    twinkle_pixels: list = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.fire_heat is None:
+            object.__setattr__(self, 'fire_heat', [0] * LED_COUNT)
+        if self.twinkle_pixels is None:
+            object.__setattr__(self, 'twinkle_pixels', [0] * LED_COUNT)
 
 
 @dataclass
@@ -537,6 +688,8 @@ def pattern_step_chase(state: AppState) -> None:
         if state.chase_color == "4":
             color = wheel((state.rainbow_offset + state.chase_position * 8) & 255)
             state.rainbow_offset = (state.rainbow_offset + 3) & 255
+        elif state.chase_color == "5":
+            color = state.custom_color if state.custom_color != 0 else Color(255, 215, 0)
         else:
             color = CHASE_COLORS.get(state.chase_color, CHASE_COLORS["1"])[1]
         active_strip.setPixelColor(state.chase_position, color)
@@ -576,6 +729,8 @@ def pattern_step_bounce(state: AppState) -> None:
         if state.bounce_color == "4":
             color = wheel((state.rainbow_offset + state.bounce_position * 8) & 255)
             state.rainbow_offset = (state.rainbow_offset + 3) & 255
+        elif state.bounce_color == "5":
+            color = state.custom_color if state.custom_color != 0 else Color(255, 215, 0)
         else:
             color = BOUNCE_COLORS.get(state.bounce_color, BOUNCE_COLORS["1"])[1]
         active_strip.setPixelColor(state.bounce_position, color)
@@ -616,10 +771,17 @@ def pattern_step_comet(state: AppState) -> None:
     clear_strip(show_now=False)
     try:
         head = state.comet_position % LED_COUNT
+        # Use custom_color base if set, else amber
+        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
+        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 165
+        base_b = state.custom_color & 0xFF if state.custom_color else 0
         for trail in range(10):
             idx = (head - trail) % LED_COUNT
-            intensity = max(0, 255 - trail * 28)
-            active_strip.setPixelColor(idx, Color(intensity, intensity // 6, 0))
+            fade = max(0, 255 - trail * 28)
+            r = int(base_r * fade / 255)
+            g = int(base_g * fade / 255)
+            b = int(base_b * fade / 255)
+            active_strip.setPixelColor(idx, Color(r, g, b))
         active_strip.show()
         state.comet_position = (state.comet_position + 1) % LED_COUNT
     except Exception as e:
@@ -630,9 +792,10 @@ def pattern_step_theater_chase(state: AppState) -> None:
     active_strip = get_strip()
     clear_strip(show_now=False)
     try:
+        slot_color = state.custom_color if state.custom_color != 0 else Color(200, 200, 220)
         for i in range(LED_COUNT):
             if (i + state.theater_phase) % 3 == 0:
-                active_strip.setPixelColor(i, Color(200, 200, 220))
+                active_strip.setPixelColor(i, slot_color)
         active_strip.show()
         state.theater_phase = (state.theater_phase + 1) % 3
     except Exception as e:
@@ -655,8 +818,14 @@ def pattern_step_pulse(state: AppState) -> None:
     active_strip = get_strip()
     try:
         phase = (state.pulse_step % 256) / 255.0
-        brightness = int((math.sin(phase * math.tau) + 1.0) * 0.5 * 255)
-        color = Color(brightness, 0, max(0, brightness // 3))
+        bright = int((math.sin(phase * math.tau) + 1.0) * 0.5 * 255)
+        if state.custom_color != 0:
+            base_r = (state.custom_color >> 16) & 0xFF
+            base_g = (state.custom_color >> 8) & 0xFF
+            base_b = state.custom_color & 0xFF
+            color = Color(int(base_r * bright / 255), int(base_g * bright / 255), int(base_b * bright / 255))
+        else:
+            color = Color(bright, 0, max(0, bright // 3))
         for i in range(LED_COUNT):
             active_strip.setPixelColor(i, color)
         active_strip.show()
@@ -673,7 +842,14 @@ def pattern_step_sparkle(state: AppState) -> None:
         for _ in range(sparkle_count):
             idx = random.randint(0, LED_COUNT - 1)
             twinkle = random.randint(120, 255)
-            active_strip.setPixelColor(idx, Color(twinkle, twinkle, twinkle))
+            if state.custom_color != 0:
+                base_r = (state.custom_color >> 16) & 0xFF
+                base_g = (state.custom_color >> 8) & 0xFF
+                base_b = state.custom_color & 0xFF
+                color = Color(int(base_r * twinkle / 255), int(base_g * twinkle / 255), int(base_b * twinkle / 255))
+            else:
+                color = Color(twinkle, twinkle, twinkle)
+            active_strip.setPixelColor(idx, color)
         active_strip.show()
     except Exception as e:
         print(f"[ERROR] Sparkle pattern step failed: {e}")
@@ -684,6 +860,94 @@ def get_delay(state: AppState) -> float:
         return EMERGENCY_DELAY_SECONDS
     pattern_map = SPEED_MAP.get(state.pattern, SPEED_MAP["1"])
     return pattern_map.get(state.speed, pattern_map["5"])
+
+
+def pattern_step_fire(state: AppState) -> None:
+    """Fire Flame — flickering heat in orange/red/yellow (custom_color tints the base hue)."""
+    active_strip = get_strip()
+    try:
+        heat = state.fire_heat
+        # Cool down every cell a little
+        for i in range(LED_COUNT):
+            cooldown = random.randint(0, 3)
+            heat[i] = max(0, heat[i] - cooldown)
+        # Heat from each cell drifts up
+        for k in range(LED_COUNT - 1, 2, -1):
+            heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2]) // 3
+        # Randomly ignite new sparks near the bottom
+        if random.randint(0, 9) < 7:
+            y = random.randint(0, min(7, LED_COUNT - 1))
+            heat[y] = min(255, heat[y] + random.randint(160, 255))
+        # Convert heat to color
+        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
+        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 80
+        base_b = state.custom_color & 0xFF if state.custom_color else 0
+        for i in range(LED_COUNT):
+            t = heat[i]
+            if t < 85:
+                r = int(base_r * t / 85)
+                g = int(base_g * t / 85)
+                b = int(base_b * t / 85)
+            elif t < 170:
+                r = base_r
+                g = min(255, base_g + int((255 - base_g) * (t - 85) / 85))
+                b = base_b
+            else:
+                r = base_r
+                g = 255
+                b = min(255, base_b + int((255 - base_b) * (t - 170) / 85))
+            active_strip.setPixelColor(i, Color(r, g, b))
+        active_strip.show()
+    except Exception as e:
+        print(f"[ERROR] Fire Flame pattern step failed: {e}")
+
+
+def pattern_step_meteor(state: AppState) -> None:
+    """Meteor Shower — bright head with a long fading tail, looping endlessly."""
+    active_strip = get_strip()
+    clear_strip(show_now=False)
+    try:
+        tail_length = 16
+        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 200
+        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 200
+        base_b = state.custom_color & 0xFF if state.custom_color else 255
+        for trail in range(tail_length):
+            idx = (state.meteor_position - trail) % LED_COUNT
+            fade = max(0, 255 - int(trail * 255 / tail_length))
+            r = int(base_r * fade / 255)
+            g = int(base_g * fade / 255)
+            b = int(base_b * fade / 255)
+            active_strip.setPixelColor(idx, Color(r, g, b))
+        active_strip.show()
+        state.meteor_position = (state.meteor_position + 1) % LED_COUNT
+    except Exception as e:
+        print(f"[ERROR] Meteor Shower pattern step failed: {e}")
+
+
+def pattern_step_twinkle(state: AppState) -> None:
+    """Twinkle Stars — pixels fade in/out independently."""
+    active_strip = get_strip()
+    try:
+        px = state.twinkle_pixels
+        # Each pixel changes brightness by a random delta each frame
+        for i in range(LED_COUNT):
+            delta = random.choice([-30, -20, -10, 10, 20, 30, 40])
+            px[i] = max(0, min(255, px[i] + delta))
+            # Small chance to switch on/off abruptly
+            if random.randint(0, 40) == 0:
+                px[i] = random.choice([0, 0, random.randint(160, 255)])
+        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
+        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 255
+        base_b = state.custom_color & 0xFF if state.custom_color else 255
+        for i in range(LED_COUNT):
+            bright = px[i]
+            r = int(base_r * bright / 255)
+            g = int(base_g * bright / 255)
+            b = int(base_b * bright / 255)
+            active_strip.setPixelColor(i, Color(r, g, b))
+        active_strip.show()
+    except Exception as e:
+        print(f"[ERROR] Twinkle Stars pattern step failed: {e}")
 
 
 def wheel(position: int) -> int:
@@ -704,30 +968,55 @@ def cycle_choice(current: str, choices: dict[str, Any]) -> str:
 
 
 def print_status(state: AppState) -> None:
-    pattern_name = PATTERN_NAMES[state.pattern]
+    pattern_name = PATTERN_NAMES.get(state.pattern, f"Pattern {state.pattern}")
     speed_name = SPEED_LABELS[state.speed]
+
+    def custom_color_label() -> str:
+        if state.custom_color == 0:
+            return "default"
+        r = (state.custom_color >> 16) & 0xFF
+        g = (state.custom_color >> 8) & 0xFF
+        b = state.custom_color & 0xFF
+        swatch = f"\x1b[48;2;{r};{g};{b}m   \x1b[0m" if sys.stdout.isatty() else ""
+        return f"{swatch} #{r:02X}{g:02X}{b:02X}"
+
     if state.pattern == "1":
         color_name = CHASE_COLORS[state.chase_color][0]
-        detail = f"Color: {color_name}"
+        detail = f"Color: {color_name}" + (f" ({custom_color_label()})" if state.chase_color == "5" else "")
     elif state.pattern in {"2", "4"}:
         palette_name = RANDOM_PALETTES[state.random_palette][0]
         detail = f"Palette: {palette_name}"
     elif state.pattern == "3":
         color_name = BOUNCE_COLORS[state.bounce_color][0]
-        detail = f"Color: {color_name}"
+        detail = f"Color: {color_name}" + (f" ({custom_color_label()})" if state.bounce_color == "5" else "")
     elif state.pattern == "-1":
         color_name = EMERGENCY_COLORS[state.emergency_color_index][0]
         detail = f"Color: {color_name} | Panic SOS"
     elif state.pattern == "5":
-        detail = "Color: Amber Trail"
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Comet Trail{suffix}"
     elif state.pattern == "6":
-        detail = "Color: Cool White Slots"
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Theater Slots{suffix}"
     elif state.pattern == "7":
         detail = "Color: Full Rainbow"
     elif state.pattern == "8":
-        detail = "Color: Red Pulse"
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Pulse{suffix}"
+    elif state.pattern == "9":
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Sparkle{suffix}"
+    elif state.pattern == "10":
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Fire{suffix}"
+    elif state.pattern == "11":
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Meteor{suffix}"
+    elif state.pattern == "12":
+        suffix = f" ({custom_color_label()})" if state.custom_color else ""
+        detail = f"Color: Twinkle{suffix}"
     else:
-        detail = "Color: White Sparkles"
+        detail = ""
 
     brightness_pct = int((max(0, state.brightness) / max(1, state.max_brightness)) * 100)
     print(f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness} ({brightness_pct}%) | {detail}")
@@ -740,36 +1029,27 @@ def maybe_read_key() -> str | None:
 
     key = sys.stdin.read(1)
     if key != "\x1b":
-        # Basic terminal fallback for some Ctrl+digit combos.
-        ctrl_char_speed_map = {
-            "\x00": "CTRL_2",
-            "\x1c": "CTRL_4",
-            "\x1d": "CTRL_5",
-            "\x1e": "CTRL_6",
-            "\x1f": "CTRL_7",
-            "\x7f": "CTRL_8",
-        }
-        if key in ctrl_char_speed_map:
-            return ctrl_char_speed_map[key]
         return key
 
-    # Read the full escape sequence so we can detect modified key combos
-    # like Ctrl+digit from terminals that emit CSI-u keycodes.
+    # Read the full escape sequence to detect arrow keys and other special keys.
     sequence = key
     while True:
         ready, _, _ = select.select([sys.stdin], [], [], 0.001)
         if not ready:
             break
         sequence += sys.stdin.read(1)
-        if len(sequence) >= 24:
+        if len(sequence) >= 8:
             break
 
-    ctrl_digit_match = re.match(r"\x1b\[(\d+);5u$", sequence)
-    if ctrl_digit_match:
-        codepoint = int(ctrl_digit_match.group(1))
-        char = chr(codepoint)
-        if char.isdigit():
-            return f"CTRL_{char}"
+    # Arrow keys: ESC [ A/B/C/D
+    arrow_map = {
+        "\x1b[A": "ARROW_UP",
+        "\x1b[B": "ARROW_DOWN",
+        "\x1b[C": "ARROW_RIGHT",
+        "\x1b[D": "ARROW_LEFT",
+    }
+    if sequence in arrow_map:
+        return arrow_map[sequence]
 
     # Escape sequences should not interfere with runtime controls.
     return None
@@ -1241,38 +1521,66 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
 def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_settings: Any) -> bool:
     allowed = available_patterns(state.emergency_only)
 
-    if key.startswith("CTRL_") and len(key) == 6:
-        speed_key = key[-1]
-        if speed_key in SPEED_LABELS:
-            state.speed = speed_key
-            print_status(state)
-            return True
-
-    if key in allowed:
-        state.pattern = key
+    # Arrow left/right: cycle through non-SOS patterns
+    if key == "ARROW_RIGHT":
+        if state.pattern in PATTERN_CYCLE_ORDER:
+            idx = PATTERN_CYCLE_ORDER.index(state.pattern)
+            state.pattern = PATTERN_CYCLE_ORDER[(idx + 1) % len(PATTERN_CYCLE_ORDER)]
+        elif not state.emergency_only:
+            state.pattern = PATTERN_CYCLE_ORDER[0]
         print_status(state)
         return True
-    if key == "s":
-        state.speed = cycle_choice(state.speed, SPEED_LABELS)
+    if key == "ARROW_LEFT":
+        if state.pattern in PATTERN_CYCLE_ORDER:
+            idx = PATTERN_CYCLE_ORDER.index(state.pattern)
+            state.pattern = PATTERN_CYCLE_ORDER[(idx - 1) % len(PATTERN_CYCLE_ORDER)]
+        elif not state.emergency_only:
+            state.pattern = PATTERN_CYCLE_ORDER[-1]
+        print_status(state)
+        return True
+
+    # Arrow up/down: brightness
+    if key == "ARROW_UP":
+        state.brightness = clamp_brightness(state.brightness + 16)
+        set_strip_brightness(state.brightness)
+        print_status(state)
+        return True
+    if key == "ARROW_DOWN":
+        state.brightness = clamp_brightness(state.brightness - 16)
+        set_strip_brightness(state.brightness)
+        print_status(state)
+        return True
+
+    # +/= speed up, - speed down
+    if key in {"+", "="}:
+        keys = list(SPEED_LABELS.keys())
+        idx = keys.index(state.speed) if state.speed in keys else 4
+        state.speed = keys[min(idx + 1, len(keys) - 1)]
+        print_status(state)
+        return True
+    if key == "-":
+        keys = list(SPEED_LABELS.keys())
+        idx = keys.index(state.speed) if state.speed in keys else 4
+        state.speed = keys[max(idx - 1, 0)]
+        print_status(state)
+        return True
+
+    # Direct pattern selection by digit key
+    if key in allowed:
+        state.pattern = key
         print_status(state)
         return True
     if key == "c":
         if state.pattern == "1":
             state.chase_color = cycle_choice(state.chase_color, CHASE_COLORS)
-        elif state.pattern == "2":
+        elif state.pattern in {"2", "4"}:
             state.random_palette = cycle_choice(state.random_palette, RANDOM_PALETTES)
         elif state.pattern == "3":
             state.bounce_color = cycle_choice(state.bounce_color, BOUNCE_COLORS)
         print_status(state)
         return True
-    if key == "+":
-        state.brightness = clamp_brightness(state.brightness + 16)
-        set_strip_brightness(state.brightness)
-        print_status(state)
-        return True
-    if key == "-":
-        state.brightness = clamp_brightness(state.brightness - 16)
-        set_strip_brightness(state.brightness)
+    if key == "n":
+        print_named_colors()
         print_status(state)
         return True
     if key == "h":
@@ -1318,6 +1626,12 @@ def run_pattern_step(state: AppState) -> None:
         pattern_step_pulse(state)
     elif state.pattern == "9":
         pattern_step_sparkle(state)
+    elif state.pattern == "10":
+        pattern_step_fire(state)
+    elif state.pattern == "11":
+        pattern_step_meteor(state)
+    elif state.pattern == "12":
+        pattern_step_twinkle(state)
     else:
         pattern_step_chase(state)
 
@@ -1431,6 +1745,7 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
         "brightness": state.brightness,
         "max_brightness": state.max_brightness,
         "emergency_only": state.emergency_only,
+        "custom_color": state.custom_color,
         "input": {
             "mode": state.input_mode,
             "pin": state.input_pin,
@@ -1465,6 +1780,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         analog_path=as_str(input_data.get("analog_path"), "/sys/bus/iio/devices/iio:device0/in_voltage0_raw"),
         analog_max=max(1, as_int(input_data.get("analog_max"), 4095)),
         emergency_only=as_bool(data.get("emergency_only"), False),
+        custom_color=as_int(data.get("custom_color"), 0),
     )
     options = RunOptions(
         frames=max(0, as_int(run_data.get("frames"), 0)),
@@ -1532,22 +1848,51 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         return state, options, test_mode, True, headless_path
 
     print("Select a pattern:")
-    print("-1. Emergency SOS")
-    print("1. Chase")
-    print("2. Random")
-    print("3. Bounce")
-    print("4. Random")
-    print("5. Comet")
-    print("6. Theater Chase")
-    print("7. Rainbow Sweep")
-    print("8. Pulse")
-    print("9. Sparkle")
+    for key, name in sorted(PATTERN_NAMES.items(), key=lambda kv: int(kv[0])):
+        print(f"  {key:>3}. {name}")
 
     pattern = ask_choice("Enter pattern", "1", PATTERN_NAMES)
     speed = ask_choice("Enter speed (0=Constant, 1..9=Level)", "5", SPEED_LABELS)
-    chase_color = ask_choice("Chase color (1=Orange, 2=Green, 3=Blue, 4=Rainbow)", "1", CHASE_COLORS)
-    random_palette = ask_choice("Random mode (1=Any RGB, 2=Warm, 3=Cool)", "1", RANDOM_PALETTES)
-    bounce_color = ask_choice("Bounce color (1=Blue, 2=Purple, 3=White, 4=Rainbow)", "1", BOUNCE_COLORS)
+
+    print("Chase color: 1=Orange  2=Green  3=Blue  4=Rainbow  5=Custom")
+    chase_color = ask_choice("Chase color", "1", CHASE_COLORS)
+    if chase_color == "5":
+        print_named_colors()
+        raw_cc = input("Custom color (name / #RRGGBB / r,g,b, default gold): ").strip() or "gold"
+        try:
+            custom_color_val = parse_custom_color(raw_cc)
+        except ValueError as exc:
+            print(exc)
+            custom_color_val = NAMED_COLORS["gold"]
+    else:
+        custom_color_val = 0
+
+    print("Random palette: " + "  ".join(f"{k}={v[0]}" for k, v in RANDOM_PALETTES.items()))
+    random_palette = ask_choice("Random palette", "1", RANDOM_PALETTES)
+
+    print("Bounce color: 1=Blue  2=Purple  3=White  4=Rainbow  5=Custom")
+    bounce_color = ask_choice("Bounce color", "1", BOUNCE_COLORS)
+    if bounce_color == "5" and custom_color_val == 0:
+        print_named_colors()
+        raw_cc = input("Custom color (name / #RRGGBB / r,g,b, default gold): ").strip() or "gold"
+        try:
+            custom_color_val = parse_custom_color(raw_cc)
+        except ValueError as exc:
+            print(exc)
+            custom_color_val = NAMED_COLORS["gold"]
+
+    # Custom color for patterns that aren't chase/bounce but support it
+    if custom_color_val == 0 and pattern not in {"1", "2", "3", "4", "-1", "7"}:
+        use_custom = ask_yes_no("Set a custom color for this pattern?", default=False)
+        if use_custom:
+            print_named_colors()
+            raw_cc = input("Custom color (name / #RRGGBB / r,g,b, default gold): ").strip() or "gold"
+            try:
+                custom_color_val = parse_custom_color(raw_cc)
+            except ValueError as exc:
+                print(exc)
+                custom_color_val = NAMED_COLORS["gold"]
+
     max_brightness = ask_int("Maximum brightness (0-255)", LED_BRIGHTNESS, 0, 255)
     brightness = ask_int("Startup brightness (0-255)", max_brightness, 0, 255)
     input_mode = ask_choice("Pi input mode (off/digital/analog)", "off", {"off": "Off", "digital": "Digital", "analog": "Analog"})
@@ -1574,6 +1919,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         analog_path=analog_path,
         analog_max=analog_max,
         emergency_only=emergency_only,
+        custom_color=custom_color_val,
     )
     normalize_pattern_for_mode(state)
     options = RunOptions(
@@ -1591,12 +1937,14 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Switch options:\n"
-            "  --pattern {-1,1,2,3,4,5,6,7,8,9} Startup pattern\n"
+            "  --pattern {-1,1..12}       Startup pattern (-1=SOS, 1-12 see list below)\n"
             "  --SOS, --sos               Shortcut to emergency SOS mode\n"
             "  --speed {0,1,2,3,4,5,6,7,8,9}  Startup speed (0=Constant, 1..9=levels)\n"
-            "  --chase-color {1,2,3,4}    Chase color option\n"
-            "  --random-palette {1,2,3}   Random palette option\n"
-            "  --bounce-color {1,2,3,4}   Bounce color option\n"
+            "  --chase-color {1,2,3,4,5}  Chase color option (5=Custom)\n"
+            "  --random-palette {1..8}    Random palette option\n"
+            "  --bounce-color {1,2,3,4,5} Bounce color option (5=Custom)\n"
+            "  --custom-color COLOR       Custom color: name, #RRGGBB, or r,g,b\n"
+            "                             (use --show-colors for a list of names)\n"
             "  --brightness N             Startup brightness 0..255\n"
             "  --max-brightness N         Brightness ceiling 0..255\n"
             "  --pi-input-mode MODE       off|digital|analog\n"
@@ -1611,21 +1959,28 @@ def parse_args() -> argparse.Namespace:
             "  --support-export [IDS]     Export task(s) to Copilot queue (IDs comma-separated, blank=open)\n"
             "  --test                     Safe ASCII simulation (no hardware)\n"
             "  --frames N                 Stop after N frames (useful for tests)\n"
+            "  --show-colors              Print named color list and exit\n"
+            "\n"
+            "Patterns: -1=Emergency SOS, 1=Chase, 2=Random, 3=Bounce, 4=Random,\n"
+            "          5=Comet, 6=Theater Chase, 7=Rainbow Sweep, 8=Pulse, 9=Sparkle,\n"
+            "          10=Fire Flame, 11=Meteor Shower, 12=Twinkle Stars\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1..9 switch pattern, Ctrl+1..Ctrl+0 set speed (terminal dependent), s cycles speed, c color option, +/- brightness, m/M support manager (add/edit/done/send/unsend), o/O nohup, h help, q quit\n"
+            "  ←/→ cycle pattern, ↑/↓ brightness, +/= speed up, - speed down,\n"
+            "  c color option, n named colors, m/M support manager, o/O nohup, h help, q quit\n"
             "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or headless JSON).\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
-    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup pattern")
+    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], help="Startup pattern")
     parser.add_argument("--SOS", "--sos", dest="sos", action="store_true", help="Shortcut for emergency SOS mode")
     parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
-    parser.add_argument("--chase-color", choices=["1", "2", "3", "4"], help="Chase color option")
-    parser.add_argument("--random-palette", choices=["1", "2", "3"], help="Random palette option")
-    parser.add_argument("--bounce-color", choices=["1", "2", "3", "4"], help="Bounce color option")
+    parser.add_argument("--chase-color", choices=["1", "2", "3", "4", "5"], help="Chase color option (5=Custom)")
+    parser.add_argument("--random-palette", choices=["1", "2", "3", "4", "5", "6", "7", "8"], help="Random palette option")
+    parser.add_argument("--bounce-color", choices=["1", "2", "3", "4", "5"], help="Bounce color option (5=Custom)")
+    parser.add_argument("--custom-color", dest="custom_color", default=None, help="Custom color: name, #RRGGBB, or r,g,b")
     parser.add_argument("--brightness", type=int, help="Startup brightness (0-255)")
     parser.add_argument("--max-brightness", type=int, help="Maximum brightness (0-255)")
     parser.add_argument("--pi-input-mode", choices=["off", "digital", "analog"], help="Pi input response mode")
@@ -1644,6 +1999,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const="",
         help="Send support task IDs to Copilot queue markdown (blank sends all open tasks)",
+    )
+    parser.add_argument(
+        "--show-colors",
+        action="store_true",
+        help="Print named color list and exit",
     )
     parser.add_argument(
         "--show-shortcuts",
@@ -1667,6 +2027,7 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.chase_color is not None,
             args.random_palette is not None,
             args.bounce_color is not None,
+            args.custom_color is not None,
             args.brightness is not None,
             args.max_brightness is not None,
             args.pi_input_mode is not None,
@@ -1683,6 +2044,16 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
     )
 
 
+def _resolve_custom_color(args: argparse.Namespace) -> int:
+    if args.custom_color is None:
+        return 0
+    try:
+        return parse_custom_color(args.custom_color)
+    except ValueError as exc:
+        print(f"[WARN] {exc}")
+        return 0
+
+
 def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
     state = AppState(
         pattern=args.pattern or "1",
@@ -1697,6 +2068,7 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         analog_path=args.analog_path or "/sys/bus/iio/devices/iio:device0/in_voltage0_raw",
         analog_max=max(1, args.analog_max if args.analog_max is not None else 4095),
         emergency_only=bool(args.emergency_only or args.sos),
+        custom_color=_resolve_custom_color(args),
     )
     state.brightness = min(state.brightness, state.max_brightness)
     if args.sos:
@@ -1745,6 +2117,8 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
     if args.sos:
         state.pattern = "-1"
         state.emergency_only = True
+    if args.custom_color is not None:
+        state.custom_color = _resolve_custom_color(args)
     normalize_pattern_for_mode(state)
     return state, options
 
@@ -1754,6 +2128,10 @@ def main() -> None:
 
     if args.show_shortcuts:
         print(SHORTCUTS_TEXT)
+        return
+
+    if args.show_colors:
+        print_named_colors()
         return
 
     if args.support_export is not None:
@@ -1826,14 +2204,15 @@ def _shutdown_handler(signum: int, frame: object) -> None:
     raise SystemExit(0)
 
 
-signal.signal(signal.SIGTERM, _shutdown_handler)
-signal.signal(signal.SIGHUP, _shutdown_handler)
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGHUP, _shutdown_handler)
 
-try:
-    main()
-except KeyboardInterrupt:
-    pass
-finally:
-    clear_strip(show_now=not isinstance(strip, VirtualStrip))
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        clear_strip(show_now=not isinstance(strip, VirtualStrip))
     if isinstance(strip, VirtualStrip):
         strip.finish()

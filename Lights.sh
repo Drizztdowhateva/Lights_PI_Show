@@ -1,11 +1,11 @@
 #!/usr/bin/env sh
-# WS281X Pattern Runner — simple launcher
+# Lights PI Show — CLI launcher
 # Usage:
-#   sudo ./runtime.sh                    # prompt for headless option, then start
-#   sudo ./runtime.sh --pattern 1 ...   # pass args directly to into.py
-#   sudo ./runtime.sh --headless        # skip prompt, use default headless config
-#   sudo ./runtime.sh --SOS             # emergency SOS shortcut
-#   sudo ./runtime.sh --test            # ASCII simulation (no hardware needed)
+#   sudo ./Lights.sh                     # interactive setup, then start
+#   sudo ./Lights.sh --pattern 1 ...    # pass args directly to into.py
+#   sudo ./Lights.sh --headless         # skip prompt, use default headless config
+#   sudo ./Lights.sh --SOS              # emergency SOS shortcut
+#   sudo ./Lights.sh --test             # ASCII simulation (no hardware needed)
 
 set -eu
 
@@ -14,14 +14,14 @@ cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 
-echo "=== WS281X Pattern Runner ==="
+echo "=== Lights PI Show ==="
 echo "Tip: Press O while running to print the background (nohup) launch command."
 echo "     Press q or Ctrl+C to quit."
 echo ""
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Note: hardware LED access requires elevated privileges." >&2
-    echo "  • Run with sudo:                sudo ./runtime.sh" >&2
+    echo "  • Run with sudo:                sudo ./Lights.sh" >&2
     echo "  • Or grant capabilities once:   sudo bash setup_permissions.sh" >&2
     echo ""
 fi

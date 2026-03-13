@@ -1,36 +1,53 @@
 # Packaging Runtimes
 
-This folder consolidates packaging runtimes for three distribution formats:
+`runtime_package.py` is a single cross-platform packaging engine for all three
+distribution formats. It uses [PyInstaller](https://pyinstaller.org/) to produce
+self-contained bundles — no Python installation required on the target machine.
 
-- `runtime_appimage.sh` for Linux AppImage
-- `runtime_exe.ps1` for Windows EXE
-- `runtime_dmg.sh` for macOS DMG
+## Modes
 
-All wrappers call `runtime_package.py`, which holds shared packaging logic.
+| Flag | Entrypoint | Description |
+|------|-----------|-------------|
+| *(default)* | `into.py` | CLI terminal application |
+| `--gui` | `gui.py` | GTK3 graphical application |
 
 ## Usage
 
-Linux AppImage:
+Run from the repo root:
 
 ```bash
-bash runtimes/runtime_appimage.sh
+# CLI builds
+python3 runtimes/runtime_package.py appimage
+python3 runtimes/runtime_package.py exe
+python3 runtimes/runtime_package.py dmg
+
+# GUI builds
+python3 runtimes/runtime_package.py appimage --gui
+python3 runtimes/runtime_package.py exe      --gui
+python3 runtimes/runtime_package.py dmg      --gui
+
+# Skip reinstalling PyInstaller
+python3 runtimes/runtime_package.py appimage --gui --skip-install
 ```
 
-Windows EXE:
+Output is placed in `dist/`.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\runtimes\runtime_exe.ps1
-```
+## Platform Requirements
 
-macOS DMG:
+| Target | Must run on | Extra dependency |
+|--------|-------------|------------------|
+| `appimage` | Linux | `appimagetool` on PATH — [AppImageKit releases](https://github.com/AppImage/AppImageKit/releases) |
+| `exe` | Windows | For GUI: MSYS2 MinGW64 + `pacman -S mingw-w64-x86_64-gtk3 mingw-w64-x86_64-python-gobject` |
+| `dmg` | macOS | For GUI: `brew install gtk+3 pygobject3` |
+
+Linux GUI build also requires GTK3 typelibs on the build machine:
 
 ```bash
-bash runtimes/runtime_dmg.sh
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0
 ```
 
 ## Notes
 
-- EXE builds must be run on Windows.
-- DMG builds must be run on macOS.
-- AppImage builds must be run on Linux.
-- `PyInstaller` is installed automatically unless `--skip-install` is passed.
+- PyInstaller is installed/upgraded automatically unless `--skip-install` is passed.
+- If `appimagetool` is missing, the Linux binary is still built; run again after installing the tool.
+- A placeholder icon is embedded automatically if `media/icon.png` does not exist.

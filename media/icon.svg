@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Dark background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1a1a2e"/>
+
+  <!-- LED strip arc — bottom half glow -->
+  <path d="M 20 80 Q 64 110 108 80" stroke="#333" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+  <!-- LED dots on the strip — rainbow sequence -->
+  <circle cx="24" cy="80" r="7" fill="#ff2222" filter="url(#glow-r)"/>
+  <circle cx="38" cy="87" r="7" fill="#ff8800" filter="url(#glow-o)"/>
+  <circle cx="53" cy="92" r="7" fill="#ffee00" filter="url(#glow-y)"/>
+  <circle cx="64" cy="94" r="7" fill="#44ff44" filter="url(#glow-g)"/>
+  <circle cx="75" cy="92" r="7" fill="#00ccff" filter="url(#glow-c)"/>
+  <circle cx="90" cy="87" r="7" fill="#4444ff" filter="url(#glow-b)"/>
+  <circle cx="104" cy="80" r="7" fill="#cc44ff" filter="url(#glow-p)"/>
+
+  <!-- Pi symbol in the centre -->
+  <text x="64" y="58" text-anchor="middle" font-family="serif" font-size="36"
+        font-weight="bold" fill="#ffffff" opacity="0.90">π</text>
+
+  <!-- Subtle outer ring -->
+  <circle cx="64" cy="64" r="60" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.15"/>
+
+  <!-- Glow filters -->
+  <defs>
+    <filter id="glow-r" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-o" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-y" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-g" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-c" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-b" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-p" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
