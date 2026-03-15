@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportMissingImports=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false, reportAttributeAccessIssue=false
 """GTK3 GUI for Lights PI Show.
 
 Requires: python3-gi python3-gi-cairo gir1.2-gtk-3.0
@@ -11,7 +10,6 @@ Run:
 """
 from __future__ import annotations
 
-import json
 import math
 import subprocess
 import sys
@@ -55,27 +53,20 @@ def _load_app_icon() -> GdkPixbuf.Pixbuf | None:
 
 # ── constants ────────────────────────────────────────────────────────────────
 
-PREVIEW_COLS = 20          # LEDs per row in the preview grid
-PREVIEW_CELL = 18          # px per LED circle (diameter)
-PREVIEW_PAD  = 3           # px gap between circles
+PREVIEW_COLS = into.LED_COUNT  # show strip as a single horizontal row
+PREVIEW_CELL = 12              # max px per LED circle (diameter)
+PREVIEW_PAD  = 2               # px gap between circles
 PREVIEW_FPS  = 25          # target refresh rate for the preview
-PREVIEW_PANEL_HEIGHT = 140 # intentionally short preview panel
-MAIN_WINDOW_WIDTH = 1360   # desktop-friendly default width
-MAIN_WINDOW_HEIGHT = 660   # shortened by 100px
-MAIN_WINDOW_MIN_WIDTH = 960
-MAIN_WINDOW_MIN_HEIGHT = 520
-MAIN_PANED_POSITION = 460
 APP_VERSION = "0.1.0"
 APP_WEBSITE = "https://github.com/Drizztdowhateva/Lights_Pi_Show"
 DONATE_URL = "https://cash.app/$teerRight"
-GUI_SETTINGS_PATH = Path.home() / ".config" / "lights_pi_show" / "gui_settings.json"
 
 PATTERN_TOOLTIPS: dict[str, str] = {
     "-1": "Emergency SOS — alternating Red/Blue/White panic flash in Morse SOS pattern.",
     "1":  "Chase — a single bright pixel races around the strip.",
     "2":  "Random — every pixel gets a random color each frame.",
     "3":  "Bounce — a single pixel bounces back and forth.",
-    "4":  "Random Wipe — the strip fills from left to right using random palette colors.",
+    "4":  "Random (alt) — same as Random with the same palette options.",
     "5":  "Comet — a glowing head with a fading amber trail that loops the strip.",
     "6":  "Theater Chase — evenly-spaced lit slots slide along the strip.",
     "7":  "Rainbow Sweep — full HSV rainbow flows across all pixels continuously.",
@@ -132,29 +123,38 @@ class LEDPreview(Gtk.DrawingArea):
     def __init__(self, virtual_strip: into.VirtualStrip) -> None:
         super().__init__()
         self._strip = virtual_strip
-        cols = PREVIEW_COLS
-        rows = math.ceil(into.LED_COUNT / cols)
-        width  = cols * (PREVIEW_CELL + PREVIEW_PAD) + PREVIEW_PAD
-        height = rows * (PREVIEW_CELL + PREVIEW_PAD) + PREVIEW_PAD
-        self.set_size_request(width, height)
+        height = PREVIEW_CELL + (PREVIEW_PAD * 2) + 2
+        self.set_hexpand(True)
+        self.set_vexpand(False)
+        self.set_size_request(320, height)
         self.connect("draw", self._on_draw)
 
     def _on_draw(self, _widget: Gtk.Widget, ctx: Any) -> bool:
         pixels = self._strip.pixels
         cols = PREVIEW_COLS
+        alloc = self.get_allocation()
+        avail_w = max(1, alloc.width)
+        avail_h = max(1, alloc.height)
+
+        # Scale LED diameter to current viewport width while preserving one-row layout.
+        cell_by_width = int((avail_w - PREVIEW_PAD * (cols + 1)) / cols)
+        cell = max(3, min(PREVIEW_CELL, cell_by_width, avail_h - (PREVIEW_PAD * 2) - 1))
+        step = cell + PREVIEW_PAD
+        total_w = cols * step - PREVIEW_PAD
+        start_x = max(PREVIEW_PAD, (avail_w - total_w) / 2)
+        y = avail_h / 2
+
         ctx.set_source_rgb(0.1, 0.1, 0.1)
         ctx.paint()
         for idx, packed in enumerate(pixels):
             col = idx % cols
-            row = idx // cols
-            x = PREVIEW_PAD + col * (PREVIEW_CELL + PREVIEW_PAD) + PREVIEW_CELL / 2
-            y = PREVIEW_PAD + row * (PREVIEW_CELL + PREVIEW_PAD) + PREVIEW_CELL / 2
+            x = start_x + col * step + cell / 2
             r, g, b = packed_to_rgba(packed)
             if packed == 0:
                 ctx.set_source_rgb(0.18, 0.18, 0.18)
             else:
                 ctx.set_source_rgb(r, g, b)
-            ctx.arc(x, y, PREVIEW_CELL / 2 - 1, 0, 2 * math.pi)
+            ctx.arc(x, y, max(1, cell / 2 - 1), 0, 2 * math.pi)
             ctx.fill()
         return False
 
@@ -163,10 +163,9 @@ class LEDPreview(Gtk.DrawingArea):
 
 class LightsApp(Gtk.Application):
 
-    def __init__(self, force_test: bool = False, safe_layout: bool = False) -> None:
+    def __init__(self, force_test: bool = False) -> None:
         super().__init__(application_id="com.lights_pi_show.gui")
         self._force_test = force_test
-        self._safe_layout = safe_layout
         self._state: into.AppState | None = None
         self._options: into.RunOptions | None = None
         self._virtual_strip: into.VirtualStrip | None = None
@@ -175,10 +174,27 @@ class LightsApp(Gtk.Application):
         self._pattern_buttons: dict[str, Gtk.ToggleButton] = {}
         self._color_section: Gtk.Box | None = None
         self._palette_combo: Gtk.ComboBoxText | None = None
+        self._palette_label: Gtk.Label | None = None
         self._named_color_combo: Gtk.ComboBoxText | None = None
+        self._named_color_label: Gtk.Label | None = None
         self._color_chooser: Gtk.ColorChooserWidget | None = None
         self._color_chooser_frame: Gtk.Frame | None = None
         self._named_combo_frame: Gtk.Frame | None = None
+        self._preset_mode_btn: Gtk.RadioButton | None = None
+        self._custom_mode_btn: Gtk.RadioButton | None = None
+        self._custom_color_value_label: Gtk.Label | None = None
+        self._suppress_color_events = False
+        self._named_selection_cache: dict[str, str] = {
+            "1": "1",
+            "3": "1",
+            "5": "1",
+            "6": "1",
+            "8": "1",
+            "9": "1",
+            "10": "1",
+            "11": "1",
+            "12": "1",
+        }
         self._speed_scale: Gtk.Scale | None = None
         self._brightness_scale: Gtk.Scale | None = None
         self._speed_label: Gtk.Label | None = None
@@ -190,7 +206,7 @@ class LightsApp(Gtk.Application):
         self._preview: LEDPreview | None = None
         self._main_window: Gtk.ApplicationWindow | None = None
         self._main_paned: Gtk.Paned | None = None
-        self._initial_paned_position = MAIN_PANED_POSITION
+        self._main_split_ratio: float = 0.40
 
     # ── Gtk.Application lifecycle ────────────────────────────────────────────
 
@@ -199,42 +215,11 @@ class LightsApp(Gtk.Application):
             self._main_window.present()
             return
 
-        window_width = MAIN_WINDOW_WIDTH
-        window_height = MAIN_WINDOW_HEIGHT
-        if not self._safe_layout:
-            settings = self._load_gui_settings()
-            if isinstance(settings.get("window_width"), int):
-                window_width = max(settings["window_width"], MAIN_WINDOW_MIN_WIDTH)
-            if isinstance(settings.get("window_height"), int):
-                window_height = max(settings["window_height"], MAIN_WINDOW_MIN_HEIGHT)
-            if isinstance(settings.get("paned_position"), int):
-                self._initial_paned_position = settings["paned_position"]
-
-        screen_width, screen_height = self._get_screen_size()
-        max_width = max(900, int(screen_width * 0.98))
-        max_height = max(520, int(screen_height * 0.90))
-        window_width = min(max(window_width, 900), max_width)
-        window_height = min(max(window_height, 520), max_height)
-
-        min_width = min(MAIN_WINDOW_MIN_WIDTH, max(820, int(screen_width * 0.72)))
-        min_height = min(MAIN_WINDOW_MIN_HEIGHT, max(460, int(screen_height * 0.65)))
-        self._initial_paned_position = max(300, min(self._initial_paned_position, window_width - 320))
-
         win = Gtk.ApplicationWindow(application=self)
         win.set_title("Lights PI Show")
-        win.set_default_size(window_width, window_height)
-        win.set_size_request(min_width, min_height)
+        # Tuned to fit common Raspberry Pi desktop resolution (1366x768)
+        win.set_default_size(1220, 700)
         win.connect("delete-event", self._on_window_close)
-        win.connect("realize", self._on_window_realized)
-        win.connect("enter-notify-event", self._on_pointer_boundary_event)
-        win.connect("leave-notify-event", self._on_pointer_boundary_event)
-        win.connect("focus-in-event", self._on_pointer_boundary_event)
-        win.connect("focus-out-event", self._on_pointer_boundary_event)
-        win.add_events(
-            Gdk.EventMask.ENTER_NOTIFY_MASK
-            | Gdk.EventMask.LEAVE_NOTIFY_MASK
-            | Gdk.EventMask.FOCUS_CHANGE_MASK
-        )
 
         # Set window/taskbar/dock icon
         icon = _load_app_icon()
@@ -369,13 +354,6 @@ class LightsApp(Gtk.Application):
 
         help_menu.append(Gtk.SeparatorMenuItem())
 
-        reset_layout_item = Gtk.MenuItem(label="Reset Layout")
-        reset_layout_item.set_tooltip_text("Reset window size and panel split to balanced defaults")
-        reset_layout_item.connect("activate", self._on_reset_layout)
-        help_menu.append(reset_layout_item)
-
-        help_menu.append(Gtk.SeparatorMenuItem())
-
         about_item = Gtk.MenuItem(label="About")
         about_item.set_tooltip_text("Show application information and license details")
         about_item.connect("activate", self._on_show_about, win)
@@ -419,20 +397,6 @@ class LightsApp(Gtk.Application):
             dialog.set_logo(icon)
         dialog.run()
         dialog.destroy()
-
-    def _on_reset_layout(self, _item: Gtk.MenuItem) -> None:
-        # Reset live UI geometry and clear persisted layout so next launch is balanced.
-        if GUI_SETTINGS_PATH.exists():
-            try:
-                GUI_SETTINGS_PATH.unlink()
-            except Exception:
-                pass
-
-        if self._main_window:
-            self._main_window.resize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT)
-        if self._main_paned:
-            self._main_paned.set_position(MAIN_PANED_POSITION)
-        self._set_status("Layout reset to balanced defaults.")
 
     # ── welcome page ─────────────────────────────────────────────────────────
 
@@ -494,37 +458,112 @@ class LightsApp(Gtk.Application):
     # ── main page ────────────────────────────────────────────────────────────
 
     def _build_main_page(self) -> Gtk.Widget:
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_position(self._initial_paned_position)
-        self._main_paned = paned
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.set_margin_top(6)
+        outer.set_margin_bottom(6)
+        outer.set_margin_start(6)
+        outer.set_margin_end(6)
 
-        paned.pack1(self._build_left_panel(), resize=True, shrink=False)
-        paned.pack2(self._build_right_panel(), resize=True, shrink=False)
-        # Select default pattern after both columns are built.
-        self._select_pattern_button("1")
-        return paned
+        top_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        top_paned.set_position(430)
+        top_paned.connect("size-allocate", self._on_main_paned_size_allocate)
+        top_paned.connect("notify::position", self._on_main_paned_position_changed)
+        top_paned.pack1(self._build_left_panel(), resize=True, shrink=False)
+        top_paned.pack2(self._build_right_panel(), resize=True, shrink=False)
+        self._main_paned = top_paned
+        outer.pack_start(top_paned, True, True, 0)
+
+        outer.pack_start(self._build_bottom_preview_panel(), False, False, 0)
+        return outer
 
     # ── left panel (controls) ─────────────────────────────────────────────────
 
     def _build_left_panel(self) -> Gtk.Widget:
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_min_content_width(460)
+        scroll.set_min_content_width(340)
 
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        vbox.set_margin_top(6)
-        vbox.set_margin_bottom(2)
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        vbox.set_margin_top(8)
+        vbox.set_margin_bottom(8)
         vbox.set_margin_start(8)
         vbox.set_margin_end(8)
         scroll.add(vbox)
 
-        # ── Color section ──
-        self._color_section = self._build_color_section()
-        vbox.pack_start(self._color_section, True, True, 0)
+        # ── Patterns ──
+        ph = Gtk.Label(label="PATTERN")
+        ph.get_style_context().add_class("section-header")
+        ph.set_xalign(0)
+        vbox.pack_start(ph, False, False, 0)
+
+        flow = Gtk.FlowBox()
+        flow.set_max_children_per_line(4)
+        flow.set_min_children_per_line(2)
+        flow.set_selection_mode(Gtk.SelectionMode.NONE)
+        flow.set_row_spacing(4)
+        flow.set_column_spacing(4)
+        vbox.pack_start(flow, False, False, 0)
+
+        # SOS first, then numeric order
+        ordered_keys = ["-1"] + [str(i) for i in range(1, 13)]
+        for key in ordered_keys:
+            name = into.PATTERN_NAMES.get(key, key)
+            btn = Gtk.ToggleButton(label=f"{key}: {name}")
+            btn.get_style_context().add_class("pattern-btn")
+            btn.set_tooltip_text(PATTERN_TOOLTIPS.get(key, name))
+            btn.connect("toggled", self._on_pattern_toggled, key)
+            self._pattern_buttons[key] = btn
+            flow.add(btn)
+
+        # ── Speed ──
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_margin_top(6)
+        vbox.pack_start(sep, False, False, 0)
+
+        speed_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        sh_lbl = Gtk.Label(label="SPEED")
+        sh_lbl.get_style_context().add_class("section-header")
+        sh_lbl.set_xalign(0)
+        self._speed_label = Gtk.Label(label="Level 5")
+        self._speed_label.set_xalign(1)
+        speed_hdr.pack_start(sh_lbl, True, True, 0)
+        speed_hdr.pack_end(self._speed_label, False, False, 0)
+        vbox.pack_start(speed_hdr, False, False, 0)
+
+        self._speed_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 9, 1)
+        self._speed_scale.set_value(5)
+        self._speed_scale.set_draw_value(False)
+        self._speed_scale.set_tooltip_text(
+            "Animation speed: 0 = constant (no delay), 1 = slowest, 9 = fastest.\n"
+            "Runtime keys: + / = to speed up, - to slow down."
+        )
+        self._speed_scale.connect("value-changed", self._on_speed_changed)
+        vbox.pack_start(self._speed_scale, False, False, 0)
+
+        # ── Brightness ──
+        bright_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        bh_lbl = Gtk.Label(label="BRIGHTNESS")
+        bh_lbl.get_style_context().add_class("section-header")
+        bh_lbl.set_xalign(0)
+        self._brightness_label = Gtk.Label(label="255 (100%)")
+        self._brightness_label.set_xalign(1)
+        bright_hdr.pack_start(bh_lbl, True, True, 0)
+        bright_hdr.pack_end(self._brightness_label, False, False, 0)
+        vbox.pack_start(bright_hdr, False, False, 0)
+
+        self._brightness_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 255, 1)
+        self._brightness_scale.set_value(255)
+        self._brightness_scale.set_draw_value(False)
+        self._brightness_scale.set_tooltip_text(
+            "LED brightness: 0 = off, 255 = maximum.\n"
+            "Runtime keys: ↑ brighten, ↓ dim."
+        )
+        self._brightness_scale.connect("value-changed", self._on_brightness_changed)
+        vbox.pack_start(self._brightness_scale, False, False, 0)
 
         # ── Run controls ──
         sep3 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        sep3.set_margin_top(2)
+        sep3.set_margin_top(6)
         vbox.pack_start(sep3, False, False, 0)
 
         run_hdr = Gtk.Label(label="RUN")
@@ -540,18 +579,22 @@ class LightsApp(Gtk.Application):
         )
         vbox.pack_start(self._test_check, False, False, 0)
 
-        run_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        run_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._run_btn = Gtk.Button(label="▶  Start")
         self._run_btn.get_style_context().add_class("suggested-action")
         self._run_btn.set_tooltip_text("Start the LED animation (or press Stop to halt it).")
         self._run_btn.connect("clicked", self._on_run_stop)
         run_row.pack_start(self._run_btn, True, True, 0)
-        vbox.pack_start(run_row, False, False, 1)
+        vbox.pack_start(run_row, False, False, 4)
+
+        # Select pattern 1 by default
+        self._select_pattern_button("1")
 
         return scroll
 
     def _build_color_section(self) -> Gtk.Box:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_hexpand(True)
 
         color_hdr = Gtk.Label(label="COLOR")
         color_hdr.get_style_context().add_class("section-header")
@@ -568,9 +611,9 @@ class LightsApp(Gtk.Application):
         self._named_combo_frame.add(named_vbox)
 
         # Named color dropdown for chase/bounce
-        chase_lbl = Gtk.Label(label="Named color preset:")
-        chase_lbl.set_xalign(0)
-        named_vbox.pack_start(chase_lbl, False, False, 0)
+        self._named_color_label = Gtk.Label(label="Named color preset:")
+        self._named_color_label.set_xalign(0)
+        named_vbox.pack_start(self._named_color_label, False, False, 0)
         self._named_color_combo = Gtk.ComboBoxText()
         self._named_color_combo.set_tooltip_text(
             "Choose a preset color for this pattern.\n"
@@ -579,10 +622,21 @@ class LightsApp(Gtk.Application):
         self._named_color_combo.connect("changed", self._on_named_color_changed)
         named_vbox.pack_start(self._named_color_combo, False, False, 0)
 
+        mode_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._preset_mode_btn = Gtk.RadioButton.new_with_label_from_widget(None, "Preset")
+        self._custom_mode_btn = Gtk.RadioButton.new_with_label_from_widget(self._preset_mode_btn, "Custom HSV")
+        self._preset_mode_btn.set_tooltip_text("Use one of the preset colors from the small palette dropdown.")
+        self._custom_mode_btn.set_tooltip_text("Use the HSV color wheel for a fully custom color.")
+        self._preset_mode_btn.connect("toggled", self._on_color_mode_toggled, False)
+        self._custom_mode_btn.connect("toggled", self._on_color_mode_toggled, True)
+        mode_row.pack_start(self._preset_mode_btn, False, False, 0)
+        mode_row.pack_start(self._custom_mode_btn, False, False, 0)
+        named_vbox.pack_start(mode_row, False, False, 0)
+
         # Palette dropdown for random patterns
-        palette_lbl = Gtk.Label(label="Random palette:")
-        palette_lbl.set_xalign(0)
-        named_vbox.pack_start(palette_lbl, False, False, 0)
+        self._palette_label = Gtk.Label(label="Random palette:")
+        self._palette_label.set_xalign(0)
+        named_vbox.pack_start(self._palette_label, False, False, 0)
         self._palette_combo = Gtk.ComboBoxText()
         self._palette_combo.set_tooltip_text(
             "Select the color palette used for random pixel assignments.\n"
@@ -598,10 +652,12 @@ class LightsApp(Gtk.Application):
 
         # HSV color wheel
         self._color_chooser_frame = Gtk.Frame(label="Custom color (HSV wheel)")
+        self._color_chooser_frame.set_hexpand(True)
         self._color_chooser = Gtk.ColorChooserWidget()
+        self._color_chooser.set_hexpand(True)
+        self._color_chooser.set_vexpand(False)
+        self._color_chooser.set_size_request(200, 170)
         self._color_chooser.set_use_alpha(False)
-        self._color_chooser.set_size_request(-1, 320)
-        self._color_chooser.set_vexpand(True)
         self._color_chooser.set_tooltip_text(
             "Pick any custom color using the HSV wheel.\n"
             "This color is used by patterns that support a custom hue\n"
@@ -610,130 +666,75 @@ class LightsApp(Gtk.Application):
         )
         self._color_chooser.connect("notify::rgba", self._on_color_chosen)
         self._color_chooser_frame.add(self._color_chooser)
-        box.pack_start(self._color_chooser_frame, True, True, 0)
+        box.pack_start(self._color_chooser_frame, False, False, 0)
 
-        return box
+        self._custom_color_value_label = Gtk.Label(label="Current custom: #000000")
+        self._custom_color_value_label.set_xalign(0)
+        box.pack_start(self._custom_color_value_label, False, False, 0)
+        self._set_custom_color_label(gdk_rgba_to_packed(self._color_chooser.get_rgba()))
 
-    def _build_pattern_speed_brightness_section(self) -> Gtk.Widget:
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-
-        ph = Gtk.Label(label="PATTERN")
-        ph.get_style_context().add_class("section-header")
-        ph.set_xalign(0)
-        box.pack_start(ph, False, False, 0)
-
-        flow = Gtk.FlowBox()
-        flow.set_max_children_per_line(5)
-        flow.set_min_children_per_line(2)
-        flow.set_selection_mode(Gtk.SelectionMode.NONE)
-        flow.set_row_spacing(4)
-        flow.set_column_spacing(4)
-        box.pack_start(flow, False, False, 0)
-
-        ordered_keys = ["-1"] + [str(i) for i in range(1, 13)]
-        for key in ordered_keys:
-            name = into.PATTERN_NAMES.get(key, key)
-            btn = Gtk.ToggleButton(label=f"{key}: {name}")
-            btn.get_style_context().add_class("pattern-btn")
-            btn.set_tooltip_text(PATTERN_TOOLTIPS.get(key, name))
-            btn.connect("toggled", self._on_pattern_toggled, key)
-            self._pattern_buttons[key] = btn
-            flow.add(btn)
-
-        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        sep.set_margin_top(6)
-        box.pack_start(sep, False, False, 0)
-
-        speed_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        sh_lbl = Gtk.Label(label="SPEED")
-        sh_lbl.get_style_context().add_class("section-header")
-        sh_lbl.set_xalign(0)
-        self._speed_label = Gtk.Label(label="Level 5")
-        self._speed_label.set_xalign(1)
-        speed_hdr.pack_start(sh_lbl, True, True, 0)
-        speed_hdr.pack_end(self._speed_label, False, False, 0)
-        box.pack_start(speed_hdr, False, False, 0)
-
-        self._speed_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 9, 1)
-        self._speed_scale.set_value(5)
-        self._speed_scale.set_draw_value(False)
-        self._speed_scale.set_tooltip_text(
-            "Animation speed: 0 = constant (no delay), 1 = slowest, 9 = fastest.\n"
-            "Runtime keys: + / = to speed up, - to slow down."
-        )
-        self._speed_scale.connect("value-changed", self._on_speed_changed)
-        box.pack_start(self._speed_scale, False, False, 0)
-
-        bright_hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        bh_lbl = Gtk.Label(label="BRIGHTNESS")
-        bh_lbl.get_style_context().add_class("section-header")
-        bh_lbl.set_xalign(0)
-        self._brightness_label = Gtk.Label(label="255 (100%)")
-        self._brightness_label.set_xalign(1)
-        bright_hdr.pack_start(bh_lbl, True, True, 0)
-        bright_hdr.pack_end(self._brightness_label, False, False, 0)
-        box.pack_start(bright_hdr, False, False, 0)
-
-        self._brightness_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 255, 1)
-        self._brightness_scale.set_value(255)
-        self._brightness_scale.set_draw_value(False)
-        self._brightness_scale.set_tooltip_text(
-            "LED brightness: 0 = off, 255 = maximum.\n"
-            "Runtime keys: ↑ brighten, ↓ dim."
-        )
-        self._brightness_scale.connect("value-changed", self._on_brightness_changed)
-        box.pack_start(self._brightness_scale, False, False, 0)
+        reset_color_btn = Gtk.Button(label="Reset Color")
+        reset_color_btn.set_tooltip_text("Reset color controls to safe defaults for the active pattern.")
+        reset_color_btn.connect("clicked", self._on_reset_color_clicked)
+        box.pack_start(reset_color_btn, False, False, 0)
 
         return box
 
     # ── right panel (preview) ─────────────────────────────────────────────────
 
     def _build_right_panel(self) -> Gtk.Widget:
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_width(280)
+
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        vbox.set_margin_top(6)
-        vbox.set_margin_bottom(6)
-        vbox.set_margin_start(6)
+        vbox.set_margin_top(8)
+        vbox.set_margin_bottom(8)
+        vbox.set_margin_start(8)
         vbox.set_margin_end(8)
 
-        ph = Gtk.Label(label="LED PREVIEW")
+        ph = Gtk.Label(label="COLOR PALETTE")
         ph.get_style_context().add_class("section-header")
         ph.set_xalign(0)
         vbox.pack_start(ph, False, False, 0)
+
+        self._color_section = self._build_color_section()
+        vbox.pack_start(self._color_section, False, False, 0)
+
+        scroll.add(vbox)
+        return scroll
+
+    def _build_bottom_preview_panel(self) -> Gtk.Widget:
+        frame = Gtk.Frame(label="LED PREVIEW")
 
         # Virtual strip (always active for preview)
         self._virtual_strip = into.VirtualStrip(into.LED_COUNT)
         self._preview = LEDPreview(self._virtual_strip)
         self._preview.set_tooltip_text(
-            "Live preview of the LED strip (virtual simulation).\n"
+            "Compact strip preview shown in the bottom row.\n"
             "Refreshes at ~25 fps when the animation is running."
         )
 
         preview_scroll = Gtk.ScrolledWindow()
-        preview_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        preview_scroll.set_min_content_height(PREVIEW_PANEL_HEIGHT)
-        preview_scroll.set_max_content_height(PREVIEW_PANEL_HEIGHT)
+        preview_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        preview_scroll.set_min_content_height(48)
+        preview_scroll.set_max_content_height(64)
+        preview_scroll.set_hexpand(True)
         preview_scroll.add(self._preview)
-        vbox.pack_start(preview_scroll, False, False, 0)
+        frame.add(preview_scroll)
+        return frame
 
-        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        sep.set_margin_top(2)
-        vbox.pack_start(sep, False, False, 0)
+    def _on_main_paned_size_allocate(self, paned: Gtk.Paned, allocation: Gdk.Rectangle) -> None:
+        width = allocation.width
+        target = int(width * self._main_split_ratio)
+        min_left = 300
+        max_left = max(min_left, width - 260)
+        paned.set_position(max(min_left, min(target, max_left)))
 
-        controls_scroll = Gtk.ScrolledWindow()
-        controls_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        controls_scroll.set_min_content_width(520)
-
-        controls_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        controls_box.set_margin_top(2)
-        controls_box.set_margin_bottom(2)
-        controls_box.set_margin_start(2)
-        controls_box.set_margin_end(2)
-        controls_box.pack_start(self._build_pattern_speed_brightness_section(), False, False, 0)
-
-        controls_scroll.add(controls_box)
-        vbox.pack_start(controls_scroll, True, True, 0)
-
-        return vbox
+    def _on_main_paned_position_changed(self, paned: Gtk.Paned, _param: Any) -> None:
+        alloc = paned.get_allocation()
+        if alloc.width > 0:
+            self._main_split_ratio = paned.get_position() / alloc.width
 
     # ── state construction ────────────────────────────────────────────────────
 
@@ -796,18 +797,14 @@ class LightsApp(Gtk.Application):
         # Set the global strip used by pattern functions
         if test_mode:
             into.strip = self._virtual_strip
-            self._set_status("Running in simulation mode (--test / checkbox enabled).")
         else:
             try:
                 into.init_strip()
                 into.get_strip().begin()
             except RuntimeError as exc:
-                self._set_status(
-                    "Hardware init failed. Run with sudo or setup_permissions.sh, "
-                    "or enable Test mode manually."
-                )
-                print(f"Hardware init failed: {exc}", file=sys.stderr)
-                return
+                self._set_status(f"Hardware error: {exc}")
+                self._test_check.set_active(True)
+                into.strip = self._virtual_strip
 
         self._virtual_strip.pixels = [into.Color(0, 0, 0)] * into.LED_COUNT
         into.apply_brightness_from_state(state)
@@ -866,6 +863,9 @@ class LightsApp(Gtk.Application):
         pass  # handled via direct state mutation in signal handlers below
 
     def _refresh_preview(self) -> bool:
+        if self._running.is_set() and self._state and self._color_chooser:
+            # Keep custom color live-synced from the HSV wheel while running.
+            self._state.custom_color = gdk_rgba_to_packed(self._color_chooser.get_rgba())
         if self._preview:
             self._preview.queue_draw()
         return self._running.is_set()  # returning False stops the timeout
@@ -912,19 +912,27 @@ class LightsApp(Gtk.Application):
             self._state.random_palette = palette_id
 
     def _on_named_color_changed(self, combo: Gtk.ComboBoxText) -> None:
-        color_id = combo.get_active_id()
-        if not color_id or not self._state:
+        if self._suppress_color_events:
             return
-        active_pattern = self._state.pattern if self._running.is_set() else self._get_active_pattern()
+
+        color_id = combo.get_active_id()
+        if not color_id:
+            return
+
+        active_pattern = self._state.pattern if (self._running.is_set() and self._state) else self._get_active_pattern()
+        if active_pattern in NAMED_COLOR_PATTERNS:
+            self._named_selection_cache[active_pattern] = color_id
+
         if active_pattern == "1":
-            if self._running.is_set():
+            if self._running.is_set() and self._state:
                 self._state.chase_color = color_id
         elif active_pattern == "3":
-            if self._running.is_set():
+            if self._running.is_set() and self._state:
                 self._state.bounce_color = color_id
         elif active_pattern in NAMED_COLOR_PATTERNS:
-            if self._running.is_set():
+            if self._running.is_set() and self._state:
                 self._state.effect_color = color_id
+
         # Show/hide color wheel when "Custom" option (value == 0) is selected
         color_map = NAMED_COLOR_PATTERNS.get(active_pattern, {})
         chosen_val = color_map.get(color_id, (None, -1))[1] if color_id else -1
@@ -934,11 +942,61 @@ class LightsApp(Gtk.Application):
             else:
                 self._color_chooser_frame.hide()
 
+        if self._preset_mode_btn and self._custom_mode_btn:
+            self._suppress_color_events = True
+            if chosen_val == 0:
+                self._custom_mode_btn.set_active(True)
+            else:
+                self._preset_mode_btn.set_active(True)
+            self._suppress_color_events = False
+
+    def _on_color_mode_toggled(self, btn: Gtk.ToggleButton, use_custom: bool) -> None:
+        if self._suppress_color_events or not btn.get_active() or not self._named_color_combo:
+            return
+
+        active_pattern = self._state.pattern if (self._running.is_set() and self._state) else self._get_active_pattern()
+        color_map = NAMED_COLOR_PATTERNS.get(active_pattern)
+        if not color_map:
+            return
+
+        if use_custom:
+            custom_key = next((k for k, (_, value) in color_map.items() if value == 0), None)
+            if custom_key:
+                self._named_color_combo.set_active_id(custom_key)
+            return
+
+        current_id = self._named_color_combo.get_active_id()
+        current_val = color_map.get(current_id, (None, -1))[1] if current_id else -1
+        if current_val == 0:
+            preset_key = next((k for k, (_, value) in color_map.items() if value != 0), None)
+            if preset_key:
+                self._named_color_combo.set_active_id(preset_key)
+
     def _on_color_chosen(self, chooser: Gtk.ColorChooserWidget, _param: Any) -> None:
         rgba = chooser.get_rgba()
         packed = gdk_rgba_to_packed(rgba)
+        self._set_custom_color_label(packed)
         if self._running.is_set() and self._state:
             self._state.custom_color = packed
+
+    def _on_reset_color_clicked(self, _btn: Gtk.Button) -> None:
+        active_pattern = self._state.pattern if (self._running.is_set() and self._state) else self._get_active_pattern()
+
+        if self._color_chooser:
+            rgba = Gdk.RGBA()
+            rgba.red, rgba.green, rgba.blue = packed_to_rgba(into.Color(255, 215, 0))
+            rgba.alpha = 1.0
+            self._color_chooser.set_rgba(rgba)
+
+        if active_pattern in PALETTE_PATTERNS and self._palette_combo:
+            self._palette_combo.set_active_id("1")
+
+        if active_pattern in NAMED_COLOR_PATTERNS and self._named_color_combo:
+            self._named_selection_cache[active_pattern] = "1"
+            self._named_color_combo.set_active_id("1")
+
+        if self._running.is_set() and self._state:
+            self._state.custom_color = into.Color(255, 215, 0)
 
     # ── color section visibility management ──────────────────────────────────
 
@@ -949,7 +1007,7 @@ class LightsApp(Gtk.Application):
         return "1"
 
     def _update_color_section_visibility(self, pattern_key: str) -> None:
-        if not self._color_section or not self._named_combo_frame or not self._named_color_combo or not self._palette_combo or not self._color_chooser_frame:
+        if not self._color_section:
             return
 
         is_no_color = pattern_key in NO_COLOR_PATTERNS
@@ -971,9 +1029,16 @@ class LightsApp(Gtk.Application):
         # Populate named combo for chase/bounce/effect
         if is_named:
             color_map = NAMED_COLOR_PATTERNS[pattern_key]
+            if self._named_color_label:
+                self._named_color_label.show()
+            if self._palette_label:
+                self._palette_label.hide()
+
+            self._suppress_color_events = True
             self._named_color_combo.remove_all()
             for k, (name, _) in color_map.items():
                 self._named_color_combo.append(k, f"{k}: {name}")
+
             # Get current selection from state if running
             if self._running.is_set() and self._state:
                 if pattern_key == "1":
@@ -982,12 +1047,23 @@ class LightsApp(Gtk.Application):
                     current = self._state.bounce_color
                 else:
                     current = self._state.effect_color
-                self._named_color_combo.set_active_id(current)
+                if current in color_map:
+                    self._named_color_combo.set_active_id(current)
+                else:
+                    self._named_color_combo.set_active(0)
             else:
-                self._named_color_combo.set_active(0)
+                cached = self._named_selection_cache.get(pattern_key)
+                if cached and cached in color_map:
+                    self._named_color_combo.set_active_id(cached)
+                else:
+                    self._named_color_combo.set_active(0)
             self._named_color_combo.show()
+            self._suppress_color_events = False
 
-            # Hide palette combo widget while named-color controls are active.
+            named_id = self._named_color_combo.get_active_id()
+            if named_id:
+                self._named_selection_cache[pattern_key] = named_id
+
             self._palette_combo.hide()
 
             # Show wheel only if the chosen option is Custom (value == 0)
@@ -998,16 +1074,46 @@ class LightsApp(Gtk.Application):
             else:
                 self._color_chooser_frame.hide()
 
+            if self._preset_mode_btn and self._custom_mode_btn:
+                self._preset_mode_btn.show()
+                self._custom_mode_btn.show()
+                self._suppress_color_events = True
+                if chosen_val == 0:
+                    self._custom_mode_btn.set_active(True)
+                else:
+                    self._preset_mode_btn.set_active(True)
+                self._suppress_color_events = False
+
         elif is_palette:
+            if self._named_color_label:
+                self._named_color_label.hide()
+            if self._palette_label:
+                self._palette_label.show()
             self._palette_combo.show()
             self._named_color_combo.hide()
             self._color_chooser_frame.hide()
+            if self._preset_mode_btn and self._custom_mode_btn:
+                self._preset_mode_btn.hide()
+                self._custom_mode_btn.hide()
 
         else:
             # Direct custom color patterns (none remaining — all effect patterns now use named combo)
+            if self._named_color_label:
+                self._named_color_label.hide()
+            if self._palette_label:
+                self._palette_label.hide()
             self._palette_combo.hide()
             self._named_color_combo.hide()
             self._color_chooser_frame.show()
+            if self._preset_mode_btn and self._custom_mode_btn:
+                self._preset_mode_btn.hide()
+                self._custom_mode_btn.hide()
+
+    def _set_custom_color_label(self, packed: int) -> None:
+        if self._custom_color_value_label:
+            self._custom_color_value_label.set_text(
+                f"Current custom: #{(packed >> 16) & 0xFF:02X}{(packed >> 8) & 0xFF:02X}{packed & 0xFF:02X}"
+            )
 
     def _select_pattern_button(self, key: str) -> None:
         btn = self._pattern_buttons.get(key)
@@ -1024,77 +1130,7 @@ class LightsApp(Gtk.Application):
             return False
         GLib.idle_add(_do)
 
-    def _reset_pointer_state(self, widget: Gtk.Widget | None = None) -> None:
-        # Some environments can leave a stale pointer grab/cursor when crossing
-        # window boundaries while dragging. Force release and default cursor.
-        try:
-            display = Gdk.Display.get_default()
-            if display is not None:
-                seat = display.get_default_seat()
-                if seat is not None:
-                    seat.ungrab()
-        except Exception:
-            pass
-
-        target = widget or self._main_window
-        if target is None:
-            return
-        try:
-            gdk_window = target.get_window()
-            if gdk_window is not None:
-                gdk_window.set_cursor(None)
-        except Exception:
-            pass
-
-    def _on_window_realized(self, win: Gtk.ApplicationWindow) -> None:
-        self._reset_pointer_state(win)
-
-    def _on_pointer_boundary_event(self, widget: Gtk.Widget, _event: Any) -> bool:
-        self._reset_pointer_state(widget)
-        return False
-
-    def _get_screen_size(self) -> tuple[int, int]:
-        screen = Gdk.Screen.get_default()
-        if screen is not None:
-            try:
-                monitor = screen.get_primary_monitor()
-                if monitor is not None and monitor >= 0:
-                    rect = screen.get_monitor_geometry(monitor)
-                    return int(rect.width), int(rect.height)
-            except Exception:
-                pass
-            return int(screen.get_width()), int(screen.get_height())
-        return MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT
-
-    def _load_gui_settings(self) -> dict[str, int]:
-        try:
-            with GUI_SETTINGS_PATH.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            pass
-        return {}
-
-    def _save_gui_settings(self, win: Gtk.Window) -> None:
-        if self._safe_layout:
-            return
-        try:
-            width, height = win.get_size()
-            settings = {
-                "window_width": int(width),
-                "window_height": int(height),
-                "paned_position": int(self._main_paned.get_position()) if self._main_paned else MAIN_PANED_POSITION,
-            }
-            GUI_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with GUI_SETTINGS_PATH.open("w", encoding="utf-8") as fh:
-                json.dump(settings, fh, indent=2)
-        except Exception:
-            # Persisting UI settings should never block shutdown.
-            pass
-
     def _on_window_close(self, _win: Gtk.Window, _event: Any) -> bool:
-        self._save_gui_settings(_win)
         self._running.clear()
         into.clear_strip(show_now=False)
         return False  # allow close
@@ -1106,14 +1142,9 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Lights PI Show — GTK3 GUI")
     parser.add_argument("--test", action="store_true", help="Force simulation mode (no hardware)")
-    parser.add_argument(
-        "--safe",
-        action="store_true",
-        help="Use balanced safe layout defaults and ignore saved GUI layout settings",
-    )
     args = parser.parse_args()
 
-    app = LightsApp(force_test=args.test, safe_layout=args.safe)
+    app = LightsApp(force_test=args.test)
     sys.exit(app.run(None))
 
 
