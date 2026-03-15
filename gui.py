@@ -75,7 +75,7 @@ PATTERN_TOOLTIPS: dict[str, str] = {
     "1":  "Chase — a single bright pixel races around the strip.",
     "2":  "Random — every pixel gets a random color each frame.",
     "3":  "Bounce — a single pixel bounces back and forth.",
-    "4":  "Random (alt) — same as Random with the same palette options.",
+    "4":  "Random Wipe — the strip fills from left to right using random palette colors.",
     "5":  "Comet — a glowing head with a fading amber trail that loops the strip.",
     "6":  "Theater Chase — evenly-spaced lit slots slide along the strip.",
     "7":  "Rainbow Sweep — full HSV rainbow flows across all pixels continuously.",

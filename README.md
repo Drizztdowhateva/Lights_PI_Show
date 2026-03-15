@@ -169,7 +169,7 @@ python3 into.py --show-colors          # list all named color presets
 | `1` | Chase | Preset / Custom |
 | `2` | Random | Palette |
 | `3` | Bounce | Preset / Custom |
-| `4` | Random (alt) | Palette |
+| `4` | Random Wipe | Palette |
 | `5` | Comet | Custom |
 | `6` | Theater Chase | Custom |
 | `7` | Rainbow Sweep | — |

@@ -59,7 +59,7 @@ PATTERN_NAMES: dict[str, str] = {
     "-1": "Emergency SOS",
     "1": "Chase",
     "2": "Random",
-    "4": "Random",
+    "4": "Random Wipe",
     "3": "Bounce",
     "5": "Comet",
     "6": "Theater Chase",
@@ -749,6 +749,29 @@ def pattern_step_random(state: AppState) -> None:
         active_strip.show()
     except Exception as e:
         print(f"[ERROR] Random pattern step failed: {e}")
+        state.random_palette = "1"
+
+
+def pattern_step_random_wipe(state: AppState) -> None:
+    """Random Wipe - fills from the start with a random color, then repeats."""
+    active_strip = get_strip()
+    try:
+        palette = RANDOM_PALETTES.get(state.random_palette, RANDOM_PALETTES["1"])[1]
+        if palette is None:
+            color = Color(
+                random.randint(0, 255),
+                random.randint(0, 255),
+                random.randint(0, 255),
+            )
+        else:
+            color = random.choice(palette)
+
+        for i in range(LED_COUNT):
+            active_strip.setPixelColor(i, color if i <= state.chase_position else Color(0, 0, 0))
+        active_strip.show()
+        state.chase_position = (state.chase_position + 1) % LED_COUNT
+    except Exception as e:
+        print(f"[ERROR] Random Wipe pattern step failed: {e}")
         state.random_palette = "1"
 
 
@@ -1515,6 +1538,14 @@ def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = F
         str(state.analog_max),
     ]
 
+    # Preserve effect color selection for patterns like Theater Chase/Comet/Pulse.
+    command.extend(["--effect-color", state.effect_color])
+    if state.custom_color != 0:
+        r = (state.custom_color >> 16) & 0xFF
+        g = (state.custom_color >> 8) & 0xFF
+        b = state.custom_color & 0xFF
+        command.extend(["--custom-color", f"{r},{g},{b}"])
+
     if state.pattern == "-1":
         command.extend(["--SOS"])
     else:
@@ -1681,8 +1712,10 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
 def run_pattern_step(state: AppState) -> None:
     if state.pattern == "1":
         pattern_step_chase(state)
-    elif state.pattern in {"2", "4"}:
+    elif state.pattern == "2":
         pattern_step_random(state)
+    elif state.pattern == "4":
+        pattern_step_random_wipe(state)
     elif state.pattern == "3":
         pattern_step_bounce(state)
     elif state.pattern == "-1":
@@ -2036,7 +2069,7 @@ def parse_args() -> argparse.Namespace:
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "  --show-colors              Print named color list and exit\n"
             "\n"
-            "Patterns: -1=Emergency SOS, 1=Chase, 2=Random, 3=Bounce, 4=Random,\n"
+            "Patterns: -1=Emergency SOS, 1=Chase, 2=Random, 3=Bounce, 4=Random Wipe,\n"
             "          5=Comet, 6=Theater Chase, 7=Rainbow Sweep, 8=Pulse, 9=Sparkle,\n"
             "          10=Fire Flame, 11=Meteor Shower, 12=Twinkle Stars\n"
             "\n"
@@ -2055,6 +2088,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4", "5"], help="Chase color option (5=Custom)")
     parser.add_argument("--random-palette", choices=["1", "2", "3", "4", "5", "6", "7", "8"], help="Random palette option")
     parser.add_argument("--bounce-color", choices=["1", "2", "3", "4", "5"], help="Bounce color option (5=Custom)")
+    parser.add_argument("--effect-color", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Effect color option (9=Custom/default)")
     parser.add_argument("--custom-color", dest="custom_color", default=None, help="Custom color: name, #RRGGBB, or r,g,b")
     parser.add_argument("--brightness", type=int, help="Startup brightness (0-255)")
     parser.add_argument("--max-brightness", type=int, help="Maximum brightness (0-255)")
@@ -2102,6 +2136,7 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.chase_color is not None,
             args.random_palette is not None,
             args.bounce_color is not None,
+            args.effect_color is not None,
             args.custom_color is not None,
             args.brightness is not None,
             args.max_brightness is not None,
@@ -2143,7 +2178,7 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         analog_max=max(1, args.analog_max if args.analog_max is not None else 4095),
         emergency_only=bool(args.emergency_only or args.sos),
         custom_color=_resolve_custom_color(args),
-        effect_color="9",
+        effect_color=args.effect_color or "9",
     )
     state.brightness = min(state.brightness, state.max_brightness)
     if args.sos:
@@ -2168,6 +2203,8 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
         state.random_palette = args.random_palette
     if args.bounce_color is not None:
         state.bounce_color = args.bounce_color
+    if args.effect_color is not None:
+        state.effect_color = args.effect_color
     if args.max_brightness is not None:
         state.max_brightness = clamp_brightness(args.max_brightness)
     if args.brightness is not None:
