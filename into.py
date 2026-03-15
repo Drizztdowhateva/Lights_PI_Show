@@ -36,6 +36,7 @@ LED_CHANNEL = 0
 HEADLESS_DEFAULT_CONFIG = "headless/headless_settings.json"
 NOHUP_LOG_FILE = "runtime_live.log"
 NOHUP_PID_FILE = "runtime_live.pid"
+NOHUP_SCRIPT_FILE = "runtime_live_nohup.sh"
 SUPPORT_TICKET_DIR = "LessonProg"
 SUPPORT_TICKET_FILE = "support_tickets.json"
 SUPPORT_TICKET_LEGACY_FILE = "support_tickets.jsonl"
@@ -385,6 +386,7 @@ Runtime shortcuts:
     n           Show named color list
     m / M       Open support task manager (add/edit/done/send/unsend)
     o / O       Print nohup command for current settings
+    Ctrl+O      Nohup tools (print and/or save sudo nohup .sh script)
     h           Show this shortcuts help again
     q           Quit
     Ctrl+C      Quit
@@ -1486,7 +1488,7 @@ def prompt_support_ticket_manager(fd: int, old_settings: Any, state: AppState) -
         tty.setcbreak(fd)
 
 
-def build_nohup_command(state: AppState, options: RunOptions) -> str:
+def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = False) -> str:
     command: list[str] = [
         "nohup",
         sys.executable,
@@ -1528,7 +1530,64 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
         command.append("--emergency-only")
 
     command.extend([">", NOHUP_LOG_FILE, "2>&1", "&", "echo", "$!", ">", NOHUP_PID_FILE])
+    if use_sudo:
+        command.insert(0, "sudo")
     return " ".join(command)
+
+
+def print_nohup_command_block(command: str) -> None:
+    sys.stdout.write(
+        "\r\n=== Heads Up: Background (nohup) launch command ===\r\n"
+        + command + "\r\n"
+        f"# Stop with: kill $(cat {NOHUP_PID_FILE})\r\n"
+        f"# Logs:      {NOHUP_LOG_FILE}\r\n"
+        "=====================================================\r\n"
+    )
+    sys.stdout.flush()
+
+
+def save_nohup_script(path: Path, command: str) -> Path:
+    script = (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n\n"
+        f"{command}\n"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(script, encoding="utf-8")
+    os.chmod(path, 0o750)
+    return path
+
+
+def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: RunOptions) -> None:
+    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    try:
+        cmd = build_nohup_command(state, options)
+        sudo_cmd = build_nohup_command(state, options, use_sudo=True)
+        print("\nNohup tools:")
+        print("  [p] Print nohup command")
+        print("  [s] Save sudo nohup script (.sh)")
+        print("  [b] Both print and save")
+        print("  [q] Cancel")
+        choice = (input("Choose option [p/s/b/q] (default p): ").strip().lower() or "p")
+
+        if choice == "q":
+            print("Nohup tools canceled.")
+            return
+
+        if choice in {"p", "b"}:
+            print_nohup_command_block(cmd)
+
+        if choice in {"s", "b"}:
+            default_path = NOHUP_SCRIPT_FILE
+            raw_path = input(f"Script path (default {default_path}): ").strip()
+            out_path = Path(raw_path or default_path).expanduser()
+            saved = save_nohup_script(out_path, sudo_cmd)
+            print(f"Saved script: {saved}")
+            print(f"Run with: bash {saved}")
+    except (KeyboardInterrupt, EOFError):
+        print("Nohup tools canceled.")
+    finally:
+        tty.setcbreak(fd)
 
 
 def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_settings: Any) -> bool:
@@ -1606,16 +1665,13 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         prompt_support_ticket_manager(fd, old_settings, state)
         print_status(state)
         return True
+    if key == "\x0f":
+        prompt_nohup_tools(fd, old_settings, state, options)
+        print_status(state)
+        return True
     if key in {"o", "O"}:
         cmd = build_nohup_command(state, options)
-        sys.stdout.write(
-            "\r\n=== Heads Up: Background (nohup) launch command ===\r\n"
-            + cmd + "\r\n"
-            f"# Stop with: kill $(cat {NOHUP_PID_FILE})\r\n"
-            f"# Logs:      {NOHUP_LOG_FILE}\r\n"
-            "=====================================================\r\n"
-        )
-        sys.stdout.flush()
+        print_nohup_command_block(cmd)
         return True
     if key == "q":
         return False
@@ -1986,7 +2042,7 @@ def parse_args() -> argparse.Namespace:
             "\n"
             "Shortcuts during run:\n"
             "  ←/→ cycle pattern, ↑/↓ brightness, +/= speed up, - speed down,\n"
-            "  c color option, n named colors, m/M support manager, o/O nohup, h help, q quit\n"
+            "  c color option, n named colors, m/M support manager, o/O nohup, Ctrl+O nohup tools, h help, q quit\n"
             "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or headless JSON).\n"
             "\n"
             "Defined output example:\n"
@@ -2053,7 +2109,6 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.pi_input_pin is not None,
             args.analog_path is not None,
             args.analog_max is not None,
-            args.test,
             args.frames is not None,
             args.duration_seconds is not None,
             args.start_delay_seconds is not None,
