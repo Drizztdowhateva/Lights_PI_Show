@@ -2108,6 +2108,15 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     duration_seconds = ask_float("Timer: duration seconds (0=disabled)", 0.0, 0.0)
     start_delay_seconds = ask_float("Timer: start delay seconds", 0.0, 0.0)
 
+    schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
+    schedule_on_time = "06:00"
+    schedule_off_time = "22:00"
+    if schedule_enabled:
+        raw_on = input("Schedule ON time  (HH:MM, 24-hr, default 06:00): ").strip()
+        schedule_on_time = raw_on if raw_on else "06:00"
+        raw_off = input("Schedule OFF time (HH:MM, 24-hr, default 22:00): ").strip()
+        schedule_off_time = raw_off if raw_off else "22:00"
+
     state = AppState(
         pattern=pattern,
         speed=speed,
@@ -2129,6 +2138,9 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         frames=frames,
         duration_seconds=duration_seconds,
         start_delay_seconds=start_delay_seconds,
+        schedule_enabled=schedule_enabled,
+        schedule_on_time=schedule_on_time,
+        schedule_off_time=schedule_off_time,
     )
 
     return state, options, test_mode, False, headless_path
