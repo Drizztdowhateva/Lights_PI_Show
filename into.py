@@ -1634,12 +1634,23 @@ def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> Non
         enable = ask_yes_no("Enable ON/OFF time schedule?", default=options.schedule_enabled)
         options.schedule_enabled = enable
         if enable:
-            raw_on = input(f"Schedule ON time  (HHMM, 24-hr, current {options.schedule_on_time.zfill(4)}): ").strip()
+            realtime = datetime.now().strftime('%H%M')
+            print(f"CURRENT TIME: (REALTIME) {realtime}")
+            raw_on = input(f"Schedule ON time  (HHMM or HH:MM, 24-hr, current {options.schedule_on_time.zfill(4)}): ").strip()
             if raw_on:
-                options.schedule_on_time = raw_on.zfill(4)
-            raw_off = input(f"Schedule OFF time (HHMM, 24-hr, current {options.schedule_off_time.zfill(4)}): ").strip()
+                # Accept both '2350' and '23:50' formats
+                on_val = raw_on.replace(":", "")
+                if len(on_val) == 4 and on_val.isdigit():
+                    options.schedule_on_time = on_val
+                else:
+                    print("Invalid ON time format. Please use HHMM or HH:MM (24-hour).")
+            raw_off = input(f"Schedule OFF time (HHMM or HH:MM, 24-hr, current {options.schedule_off_time.zfill(4)}): ").strip()
             if raw_off:
-                options.schedule_off_time = raw_off.zfill(4)
+                off_val = raw_off.replace(":", "")
+                if len(off_val) == 4 and off_val.isdigit():
+                    options.schedule_off_time = off_val
+                else:
+                    print("Invalid OFF time format. Please use HHMM or HH:MM (24-hour).")
             print(f"Schedule enabled: ON={options.schedule_on_time.zfill(4)}  OFF={options.schedule_off_time.zfill(4)}")
         else:
             print("Schedule disabled — lights run continuously.")
@@ -1833,7 +1844,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                         "Lights OFF. Waiting…"
                     )
                     _schedule_was_active = False
-                time.sleep(30)
+                time.sleep(1)
                 continue
             if not _schedule_was_active:
                 # Re-entering the ON window — restore brightness and resume.
