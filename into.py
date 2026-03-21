@@ -69,10 +69,29 @@ PATTERN_NAMES: dict[str, str] = {
     "10": "Fire Flame",
     "11": "Meteor Shower",
     "12": "Twinkle Stars",
+    "13": "Blink",
 }
 
 # Ordered list of all pattern keys for left/right arrow cycling (SOS excluded)
-PATTERN_CYCLE_ORDER: list[str] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+PATTERN_CYCLE_ORDER: list[str] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"]
+def pattern_step_blink(state: AppState) -> None:
+    """Blink — all LEDs ON (effect color) for half the cycle, OFF for half."""
+    active_strip = get_strip()
+    # Use effect color, fallback to white
+    eff = resolve_effect_color(state)
+    color = eff if eff != 0 else Color(255, 255, 255)
+    # Use a state counter to track blink phase
+    if not hasattr(state, '_blink_phase'):
+        state._blink_phase = 0
+    # Blink period based on speed (faster = shorter period)
+    speed_periods = {"1": 32, "2": 24, "3": 16, "4": 12, "5": 8, "6": 6, "7": 4, "8": 2, "9": 1, "0": 32}
+    period = speed_periods.get(state.speed, 8)
+    phase = state._blink_phase % (2 * period)
+    on = phase < period
+    for i in range(LED_COUNT):
+        active_strip.setPixelColor(i, color if on else Color(0, 0, 0))
+    active_strip.show()
+    state._blink_phase += 1
 
 
 def available_patterns(emergency_only: bool) -> dict[str, str]:
@@ -740,8 +759,19 @@ def resolve_effect_color(state: AppState) -> int:
     When effect_color is "9" (Custom) the raw custom_color value is returned so
     the pattern falls back to its own default when custom_color is also 0.
     """
+    # Fallback color cycling for 'Custom' (9) effect_color
     if state.effect_color == "9":
-        return state.custom_color
+        fallback_colors = [Color(255,0,0), Color(0,255,0), Color(0,0,255), Color(255,255,0), Color(255,255,255), Color(0,255,255), Color(255,0,255)]
+        # Use a global or state-based counter to cycle colors every 2 passes
+        if not hasattr(state, '_custom_cycle_counter'):
+            state._custom_cycle_counter = 0
+        if not hasattr(state, '_custom_cycle_index'):
+            state._custom_cycle_index = 0
+        state._custom_cycle_counter += 1
+        if state._custom_cycle_counter >= 2:
+            state._custom_cycle_counter = 0
+            state._custom_cycle_index = (state._custom_cycle_index + 1) % len(fallback_colors)
+        return fallback_colors[state._custom_cycle_index]
     entry = EFFECT_COLORS.get(state.effect_color)
     return entry[1] if entry else state.custom_color
 
@@ -1805,6 +1835,8 @@ def run_pattern_step(state: AppState) -> None:
         pattern_step_meteor(state)
     elif state.pattern == "12":
         pattern_step_twinkle(state)
+    elif state.pattern == "13":
+        pattern_step_blink(state)
     else:
         pattern_step_chase(state)
 
@@ -1988,6 +2020,16 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
 
 
 def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, RunOptions, bool]:
+        # Disallow custom color in headless mode: override any 'Custom' color selection
+        # For chase_color, bounce_color, effect_color: if set to '5' or '9' (Custom), use '4' (Rainbow) or '1' (default)
+        if state.chase_color == "5":
+            state.chase_color = "4"  # Rainbow
+        if state.bounce_color == "5":
+            state.bounce_color = "4"  # Rainbow
+        if state.effect_color == "9":
+            state.effect_color = "3"  # Blue (or pick another default, not custom)
+        if state.custom_color != 0:
+            state.custom_color = 0  # Ignore custom color in headless
     raw_input_data = data.get("input")
     raw_run_data = data.get("run")
     input_data = cast(dict[str, Any], raw_input_data) if isinstance(raw_input_data, dict) else {}
