@@ -362,12 +362,12 @@ class LightsApp(Gtk.Application):
         time_menu.append(Gtk.SeparatorMenuItem())
 
         set_on_item = Gtk.MenuItem(label="Set ON Time\u2026")
-        set_on_item.set_tooltip_text("Set the daily ON time (24-hour HH:MM)")
+        set_on_item.set_tooltip_text("Set the daily ON time (24-hour HHMM, e.g. 1800 for 6pm)")
         set_on_item.connect("activate", self._on_set_on_time, win)
         time_menu.append(set_on_item)
 
         set_off_item = Gtk.MenuItem(label="Set OFF Time\u2026")
-        set_off_item.set_tooltip_text("Set the daily OFF time (24-hour HH:MM)")
+        set_off_item.set_tooltip_text("Set the daily OFF time (24-hour HHMM, e.g. 600 for 6am)")
         set_off_item.connect("activate", self._on_set_off_time, win)
         time_menu.append(set_off_item)
 
@@ -407,7 +407,7 @@ class LightsApp(Gtk.Application):
 
     def _on_set_on_time(self, _item: Gtk.MenuItem, parent: Gtk.ApplicationWindow) -> None:
         """Open a dialog to set the schedule ON time."""
-        current = self._schedule_on_entry.get_text() if self._schedule_on_entry else "06:00"
+        current = self._schedule_on_entry.get_text() if self._schedule_on_entry else "0600"
         dialog = Gtk.Dialog(title="Set ON Time", transient_for=parent, modal=True)
         dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                            Gtk.STOCK_OK, Gtk.ResponseType.OK)
@@ -417,19 +417,19 @@ class LightsApp(Gtk.Application):
         area.set_margin_bottom(12)
         area.set_margin_start(12)
         area.set_margin_end(12)
-        area.pack_start(Gtk.Label(label="ON time (HH:MM, 24-hour):"), False, False, 0)
+        area.pack_start(Gtk.Label(label="ON time (HHMM, 24-hour, e.g. 1800 for 6pm):"), False, False, 0)
         entry = Gtk.Entry()
         entry.set_text(current)
-        entry.set_max_length(5)
+        entry.set_max_length(4)
         area.pack_start(entry, False, False, 0)
         dialog.show_all()
         if dialog.run() == Gtk.ResponseType.OK and self._schedule_on_entry:
-            self._schedule_on_entry.set_text(entry.get_text().strip())
+            self._schedule_on_entry.set_text(entry.get_text().strip().zfill(4))
         dialog.destroy()
 
     def _on_set_off_time(self, _item: Gtk.MenuItem, parent: Gtk.ApplicationWindow) -> None:
         """Open a dialog to set the schedule OFF time."""
-        current = self._schedule_off_entry.get_text() if self._schedule_off_entry else "22:00"
+        current = self._schedule_off_entry.get_text() if self._schedule_off_entry else "2200"
         dialog = Gtk.Dialog(title="Set OFF Time", transient_for=parent, modal=True)
         dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
                            Gtk.STOCK_OK, Gtk.ResponseType.OK)
@@ -439,14 +439,14 @@ class LightsApp(Gtk.Application):
         area.set_margin_bottom(12)
         area.set_margin_start(12)
         area.set_margin_end(12)
-        area.pack_start(Gtk.Label(label="OFF time (HH:MM, 24-hour):"), False, False, 0)
+        area.pack_start(Gtk.Label(label="OFF time (HHMM, 24-hour, e.g. 600 for 6am):"), False, False, 0)
         entry = Gtk.Entry()
         entry.set_text(current)
-        entry.set_max_length(5)
+        entry.set_max_length(4)
         area.pack_start(entry, False, False, 0)
         dialog.show_all()
         if dialog.run() == Gtk.ResponseType.OK and self._schedule_off_entry:
-            self._schedule_off_entry.set_text(entry.get_text().strip())
+            self._schedule_off_entry.set_text(entry.get_text().strip().zfill(4))
         dialog.destroy()
 
     def _open_path(self, path: Path) -> None:
@@ -814,33 +814,31 @@ class LightsApp(Gtk.Application):
         self._schedule_time_box.set_margin_start(16)
 
         on_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        on_lbl = Gtk.Label(label="ON time (HH:MM):")
+        on_lbl = Gtk.Label(label="ON time (HHMM):")
         on_lbl.set_xalign(0)
         on_lbl.set_width_chars(18)
         self._schedule_on_entry = Gtk.Entry()
-        self._schedule_on_entry.set_text("06:00")
-        self._schedule_on_entry.set_max_length(5)
-        self._schedule_on_entry.set_width_chars(7)
+        self._schedule_on_entry.set_text("0600")
+        self._schedule_on_entry.set_max_length(4)
+        self._schedule_on_entry.set_width_chars(5)
         self._schedule_on_entry.set_tooltip_text(
-            "Time when the lights turn ON each day (24-hour HH:MM).\n"
-            "Example: 18:00 for 6 PM."
+            "Time when the lights turn ON each day (24-hour HHMM, e.g. 1800 for 6pm)."
         )
         on_row.pack_start(on_lbl, False, False, 0)
         on_row.pack_start(self._schedule_on_entry, False, False, 0)
         self._schedule_time_box.pack_start(on_row, False, False, 0)
 
         off_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        off_lbl = Gtk.Label(label="OFF time (HH:MM):")
+        off_lbl = Gtk.Label(label="OFF time (HHMM):")
         off_lbl.set_xalign(0)
         off_lbl.set_width_chars(18)
         self._schedule_off_entry = Gtk.Entry()
-        self._schedule_off_entry.set_text("22:00")
-        self._schedule_off_entry.set_max_length(5)
-        self._schedule_off_entry.set_width_chars(7)
+        self._schedule_off_entry.set_text("2200")
+        self._schedule_off_entry.set_max_length(4)
+        self._schedule_off_entry.set_width_chars(5)
         self._schedule_off_entry.set_tooltip_text(
-            "Time when the lights turn OFF each day (24-hour HH:MM).\n"
-            "Example: 23:30 for 11:30 PM.\n"
-            "Overnight spans work: e.g. ON=20:00, OFF=06:00."
+            "Time when the lights turn OFF each day (24-hour HHMM, e.g. 600 for 6am).\n"
+            "Overnight spans work: e.g. ON=2000, OFF=0600."
         )
         off_row.pack_start(off_lbl, False, False, 0)
         off_row.pack_start(self._schedule_off_entry, False, False, 0)

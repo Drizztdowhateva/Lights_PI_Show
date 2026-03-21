@@ -384,7 +384,7 @@ Runtime shortcuts:
     -           Speed down
     c           Cycle color option for current pattern
     n           Show named color list
-    t / T       Set ON/OFF schedule time (enable/disable schedule)
+    t / T       Set ON/OFF schedule time (enable/disable schedule, format: HHMM, e.g. 1800 for 6pm)
     m / M       Open support task manager (add/edit/done/send/unsend)
     o / O       Print nohup command for current settings
     Ctrl+O      Nohup tools (print and/or save sudo nohup .sh script)
@@ -461,8 +461,8 @@ class RunOptions:
     start_delay_seconds: float = 0.0
     # ON/OFF time schedule — disabled by default; uses local host timezone.
     schedule_enabled: bool = False
-    schedule_on_time: str = "06:00"   # HH:MM — local time when lights turn ON
-    schedule_off_time: str = "22:00"  # HH:MM — local time when lights turn OFF
+    schedule_on_time: str = "0600"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
+    schedule_off_time: str = "2200"  # HHMM — local time when lights turn OFF (e.g. 600 for 6am)
 
 
 def is_within_schedule(options: "RunOptions") -> bool:
@@ -477,8 +477,10 @@ def is_within_schedule(options: "RunOptions") -> bool:
     if not options.schedule_enabled:
         return True
     try:
-        on_h, on_m = map(int, options.schedule_on_time.split(":"))
-        off_h, off_m = map(int, options.schedule_off_time.split(":"))
+        on_val = int(options.schedule_on_time)
+        off_val = int(options.schedule_off_time)
+        on_h, on_m = divmod(on_val, 100)
+        off_h, off_m = divmod(off_val, 100)
     except (ValueError, AttributeError):
         return True  # malformed time string — treat as always-on
     on_t = dt_time(on_h % 24, on_m % 60)
@@ -1632,18 +1634,18 @@ def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> Non
     try:
         print(f"\nSchedule is currently {'ENABLED' if options.schedule_enabled else 'DISABLED'}.")
         if options.schedule_enabled:
-            print(f"  ON time : {options.schedule_on_time}")
-            print(f"  OFF time: {options.schedule_off_time}")
+            print(f"  ON time : {options.schedule_on_time.zfill(4)}")
+            print(f"  OFF time: {options.schedule_off_time.zfill(4)}")
         enable = ask_yes_no("Enable ON/OFF time schedule?", default=options.schedule_enabled)
         options.schedule_enabled = enable
         if enable:
-            raw_on = input(f"Schedule ON time  (HH:MM, 24-hr, current {options.schedule_on_time}): ").strip()
+            raw_on = input(f"Schedule ON time  (HHMM, 24-hr, current {options.schedule_on_time.zfill(4)}): ").strip()
             if raw_on:
-                options.schedule_on_time = raw_on
-            raw_off = input(f"Schedule OFF time (HH:MM, 24-hr, current {options.schedule_off_time}): ").strip()
+                options.schedule_on_time = raw_on.zfill(4)
+            raw_off = input(f"Schedule OFF time (HHMM, 24-hr, current {options.schedule_off_time.zfill(4)}): ").strip()
             if raw_off:
-                options.schedule_off_time = raw_off
-            print(f"Schedule enabled: ON={options.schedule_on_time}  OFF={options.schedule_off_time}")
+                options.schedule_off_time = raw_off.zfill(4)
+            print(f"Schedule enabled: ON={options.schedule_on_time.zfill(4)}  OFF={options.schedule_off_time.zfill(4)}")
         else:
             print("Schedule disabled — lights run continuously.")
     except (KeyboardInterrupt, EOFError):
@@ -1830,7 +1832,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                     clear_strip()
                     print(
                         f"[Schedule] Outside ON window "
-                        f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                        f"({options.schedule_on_time.zfill(4)}–{options.schedule_off_time.zfill(4)} local). "
                         "Lights OFF. Waiting…"
                     )
                     _schedule_was_active = False
@@ -1841,7 +1843,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                 apply_brightness_from_state(state)
                 print(
                     f"[Schedule] Inside ON window "
-                    f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                    f"({options.schedule_on_time.zfill(4)}–{options.schedule_off_time.zfill(4)} local). "
                     "Lights ON."
                 )
                 _schedule_was_active = True
@@ -1873,7 +1875,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                     clear_strip()
                     sys.stdout.write(
                         f"\r\n[Schedule] Outside ON window "
-                        f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                        f"({options.schedule_on_time.zfill(4)}–{options.schedule_off_time.zfill(4)} local). "
                         "Lights OFF. Press q to quit.\r\n"
                     )
                     sys.stdout.flush()
@@ -1885,7 +1887,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                 apply_brightness_from_state(state)
                 sys.stdout.write(
                     f"\r\n[Schedule] Inside ON window "
-                    f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                    f"({options.schedule_on_time.zfill(4)}–{options.schedule_off_time.zfill(4)} local). "
                     "Lights ON.\r\n"
                 )
                 sys.stdout.flush()
@@ -2140,13 +2142,13 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     start_delay_seconds = ask_float("Timer: start delay seconds", 0.0, 0.0)
 
     schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
-    schedule_on_time = "06:00"
-    schedule_off_time = "22:00"
+    schedule_on_time = "0600"
+    schedule_off_time = "2200"
     if schedule_enabled:
-        raw_on = input("Schedule ON time  (HH:MM, 24-hr, default 06:00): ").strip()
-        schedule_on_time = raw_on if raw_on else "06:00"
-        raw_off = input("Schedule OFF time (HH:MM, 24-hr, default 22:00): ").strip()
-        schedule_off_time = raw_off if raw_off else "22:00"
+        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 0600): ").strip()
+        schedule_on_time = raw_on.zfill(4) if raw_on else "0600"
+        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 2200): ").strip()
+        schedule_off_time = raw_off.zfill(4) if raw_off else "2200"
 
     state = AppState(
         pattern=pattern,
