@@ -74,6 +74,7 @@ PATTERN_NAMES: dict[str, str] = {
 
 # Ordered list of all pattern keys for left/right arrow cycling (SOS excluded)
 PATTERN_CYCLE_ORDER: list[str] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"]
+
 def pattern_step_blink(state: AppState) -> None:
     """Blink — all LEDs ON (effect color) for half the cycle, OFF for half."""
     active_strip = get_strip()
