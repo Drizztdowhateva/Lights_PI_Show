@@ -75,24 +75,6 @@ PATTERN_NAMES: dict[str, str] = {
 # Ordered list of all pattern keys for left/right arrow cycling (SOS excluded)
 PATTERN_CYCLE_ORDER: list[str] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"]
 
-def pattern_step_blink(state: AppState) -> None:
-    """Blink — all LEDs ON (effect color) for half the cycle, OFF for half."""
-    active_strip = get_strip()
-    # Use effect color, fallback to white
-    eff = resolve_effect_color(state)
-    color = eff if eff != 0 else Color(255, 255, 255)
-    # Use a state counter to track blink phase
-    if not hasattr(state, '_blink_phase'):
-        state._blink_phase = 0
-    # Blink period based on speed (faster = shorter period)
-    speed_periods = {"1": 32, "2": 24, "3": 16, "4": 12, "5": 8, "6": 6, "7": 4, "8": 2, "9": 1, "0": 32}
-    period = speed_periods.get(state.speed, 8)
-    phase = state._blink_phase % (2 * period)
-    on = phase < period
-    for i in range(LED_COUNT):
-        active_strip.setPixelColor(i, color if on else Color(0, 0, 0))
-    active_strip.show()
-    state._blink_phase += 1
 
 
 def available_patterns(emergency_only: bool) -> dict[str, str]:
@@ -796,24 +778,6 @@ def pattern_step_chase(state: AppState) -> None:
         state.chase_color = "1"
 
 
-def pattern_step_random(state: AppState) -> None:
-    active_strip = get_strip()
-    try:
-        palette = RANDOM_PALETTES.get(state.random_palette, RANDOM_PALETTES["1"])[1]
-        for i in range(LED_COUNT):
-            if palette is None:
-                active_strip.setPixelColor(
-                    i,
-                    Color(
-                        random.randint(0, 255),
-                        random.randint(0, 255),
-                        random.randint(0, 255),
-                    ),
-                )
-            else:
-                active_strip.setPixelColor(i, random.choice(palette))
-        active_strip.show()
-    except Exception as e:
         print(f"[ERROR] Random pattern step failed: {e}")
         state.random_palette = "1"
 
