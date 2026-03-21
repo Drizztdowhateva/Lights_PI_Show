@@ -377,23 +377,67 @@ def print_named_colors() -> None:
     print()
 
 
+
 SHORTCUTS_TEXT = """
-Runtime shortcuts:
-    1..9        Switch pattern directly
-    a / d       Cycle pattern left / right
-    w / s       Brightness up / down
-    + / =       Speed up (Level 1-9)
-    -           Speed down
-    c           Cycle color option for current pattern
-    n           Show named color list
-    t / T       Set ON/OFF schedule time (enable/disable schedule, format: HHMM, e.g. 1800 for 6pm)
-    m / M       Open support task manager (add/edit/done/send/unsend)
-    o / O       Print nohup command for current settings
-    Ctrl+O      Nohup tools (print and/or save sudo nohup .sh script)
-    h           Show this shortcuts help again
-    q           Quit
-    Ctrl+C      Quit
-    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
+=== Lights Pi Show Controls ===
+
+[ Patterns ]
+    1..9      Switch pattern directly
+    a / d     Cycle pattern left / right
+
+[ Brightness & Speed ]
+    w / s     Brightness up / down
+    + / =     Speed up
+    -         Speed down
+
+[ Colors ]
+    c         Cycle color option for current pattern
+    k         Enter custom color (name, #RRGGBB, or r,g,b)
+    n         Show named color list
+
+[ Other ]
+    t / T     Set ON/OFF schedule time
+    m / M     Support task manager
+    o / O     Print nohup command
+    Ctrl+O    Nohup tools
+    h         Show this help screen
+    q         Quit
+    Ctrl+C    Quit
+""".strip()
+
+DETAILED_HELP_TEXT = """
+=== Lights Pi Show - Full Help ===
+
+[ Pattern Selection ]
+    1..9      Instantly switch to a pattern (see docs for pattern list)
+    a / d     Cycle through patterns left/right
+
+[ Brightness & Speed ]
+    w         Increase brightness
+    s         Decrease brightness
+    + / =     Increase speed (Level 1-9)
+    -         Decrease speed
+
+[ Color Controls ]
+    c         Cycle through available color options for the current pattern
+    k         Enter a custom color (type a name, #RRGGBB, or r,g,b, then press Enter)
+    n         Show a list of named colors
+
+[ Scheduling & Tasks ]
+    t / T     Set ON/OFF schedule (format: HHMM, e.g. 1800 for 6pm)
+    m / M     Open support task manager (add/edit/done/send/unsend)
+
+[ Advanced ]
+    o / O     Print nohup command for current settings
+    Ctrl+O    Nohup tools (print/save sudo nohup .sh script)
+
+[ General ]
+    h         Show this help screen again (simple)
+    H         Show detailed help screen
+    q         Quit the program
+    Ctrl+C    Force quit
+
+Tip: For custom colors, press 'k', type your color, and press Enter.
 """.strip()
 
 OUTPUT_EXAMPLE_TEXT = """
@@ -448,6 +492,10 @@ class AppState:
     meteor_position: int = 0
     fire_heat: list = None  # type: ignore[assignment]
     twinkle_pixels: list = None  # type: ignore[assignment]
+
+    # Buffer for direct custom color entry
+    color_input_buffer: str = ""
+    color_input_active: bool = False
 
     def __post_init__(self) -> None:
         if self.fire_heat is None:
@@ -1695,6 +1743,44 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
 def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_settings: Any) -> bool:
     allowed = available_patterns(state.emergency_only)
 
+    # If in color input mode, buffer input and process on Enter
+    if state.color_input_active:
+        if key in {'\r', '\n', '\r\n', '\x0d', '\x0a'} or key == '\n' or key == '\r':
+            # Try to parse and set custom color
+            raw_cc = state.color_input_buffer.strip()
+            try:
+                custom_color_val = parse_custom_color(raw_cc)
+                state.custom_color = custom_color_val
+                print(f"[Custom Color] Set to: {raw_cc}")
+            except Exception as exc:
+                print(f"[Custom Color] Invalid: {raw_cc}\n{exc}")
+            state.color_input_buffer = ""
+            state.color_input_active = False
+            print_status(state)
+            return True
+        elif key in {'\x7f', '\b'}:
+            # Backspace
+            state.color_input_buffer = state.color_input_buffer[:-1]
+            print(f"[Custom Color] {state.color_input_buffer}", end='\r')
+            return True
+        elif len(key) == 1 and (key.isalnum() or key in {',', '#'}):
+            state.color_input_buffer += key
+            print(f"[Custom Color] {state.color_input_buffer}", end='\r')
+            return True
+        else:
+            # Ignore other keys in color input mode
+            return True
+    # Start color input mode with 'k' key (only if pattern supports custom color)
+    if key == "k":
+        # Only allow for patterns that support custom color
+        if state.pattern in {"1", "3"} or (state.pattern in {"5", "6", "8", "9", "10", "11", "12"} and state.effect_color == "9"):
+            state.color_input_active = True
+            state.color_input_buffer = ""
+            print("Enter custom color (name, #RRGGBB, or r,g,b): ", end="", flush=True)
+        else:
+            print("[Custom Color] Not supported for this pattern.")
+        return True
+
     # Arrow left/right: cycle through non-SOS patterns
     if key == "d":
         if state.pattern in PATTERN_CYCLE_ORDER:
@@ -1763,6 +1849,10 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print(SHORTCUTS_TEXT)
         print_status(state)
         return True
+    if key == "H":
+        print(DETAILED_HELP_TEXT)
+        print_status(state)
+        return True
     if key in {"t", "T"}:
         prompt_schedule_time(fd, old_settings, options)
         print_status(state)
@@ -1781,6 +1871,7 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         return True
     if key == "q":
         return False
+    # Ignore all other unrecognized keys (do nothing, no error)
     return True
 
 
