@@ -2486,7 +2486,15 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
             else:
                 headless_path = HEADLESS_DEFAULT_CONFIG
         elif choice == 'e':
-            entered = input(f"Headless JSON path (default {HEADLESS_DEFAULT_CONFIG}): ").strip()
+            # Show available config/script paths for easier selection.
+            print("Available headless JSON configs:")
+            for fname in [default_name] + options_list:
+                print(f"  - {headless_dir / fname}")
+            print("Available nohup scripts:")
+            scripts_dir = Path("scripts")
+            for script_path in sorted(scripts_dir.glob('*.sh')):
+                print(f"  - {script_path}")
+            entered = input(f"Enter JSON path (default {HEADLESS_DEFAULT_CONFIG}): ").strip()
             headless_path = entered or HEADLESS_DEFAULT_CONFIG
 
         data = load_headless_config(headless_path)
