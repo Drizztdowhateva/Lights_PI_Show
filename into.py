@@ -7,6 +7,7 @@ import os
 import random
 import re
 import select
+import shlex
 import shutil
 import signal
 import sys
@@ -31,6 +32,10 @@ LED_COUNT = 120
 LED_PIN = 18
 LED_BRIGHTNESS = 255
 LED_FREQ_HZ = 800000
+
+# Allow runtime override of LED string length via CLI option or headless config.
+
+
 LED_DMA = 10
 LED_INVERT = False
 LED_CHANNEL = 0
@@ -124,7 +129,12 @@ def ensure_single_instance(force: bool = False) -> None:
             existing_pid = 0
 
         if existing_pid > 0 and is_pid_running(existing_pid):
-            if force:
+            if existing_pid == os.getpid():
+                # This can happen when the nohup wrapper pre-writes runtime_live.pid
+                # before the process gets to this initialization code.
+                # In that case, do not kill ourselves and continue normally.
+                existing_pid = 0
+            elif force:
                 print(f"Force-killing existing instance PID {existing_pid}...")
                 try:
                     os.kill(existing_pid, signal.SIGTERM)
@@ -182,6 +192,8 @@ SPEED_LABELS: dict[str, str] = {
     "8": "Level 8",
     "9": "Level 9",
 }
+
+BRIGHTNESS_STEP = 8  # Default delta for w/s key controls (32 steps from 0..255)
 
 SPEED_MAP: dict[str, dict[str, float]] = {
     "1": {
@@ -469,7 +481,7 @@ SHORTCUTS_TEXT = """
     a / d     Cycle pattern left / right
 
 [ Brightness & Speed ]
-    w / s     Brightness up / down
+    w / s     Brightness up/down (step 8)
     + / =     Speed up
     -         Speed down
 
@@ -482,7 +494,7 @@ SHORTCUTS_TEXT = """
     t / T     Set ON/OFF schedule time
     m / M     Support task manager
     o / O     Print nohup command
-    Ctrl+O    Nohup tools
+    Ctrl+O    Save sudo nohup script to scripts/<color>_<brightness>_<speed>.sh
     h         Show this help screen
     q         Quit
     Ctrl+C    Quit
@@ -571,6 +583,7 @@ class AppState:
     pulse_step: int = 0
     rainbow_offset: int = 0
     blink_on: bool = False
+    led_count: int = LED_COUNT
     custom_color: int = 0  # packed 0xRRGGBB; 0 = use pattern default
     effect_color: str = "9"  # key into EFFECT_COLORS; "9" = Custom → custom_color / built-in default
     meteor_position: int = 0
@@ -582,10 +595,11 @@ class AppState:
     color_input_active: bool = False
 
     def __post_init__(self) -> None:
+        actual_count = max(1, self.led_count)
         if self.fire_heat is None:
-            object.__setattr__(self, 'fire_heat', [0] * LED_COUNT)
+            object.__setattr__(self, 'fire_heat', [0] * actual_count)
         if self.twinkle_pixels is None:
-            object.__setattr__(self, 'twinkle_pixels', [0] * LED_COUNT)
+            object.__setattr__(self, 'twinkle_pixels', [0] * actual_count)
 
 
 @dataclass
@@ -771,7 +785,8 @@ def clear_strip(show_now: bool = True) -> None:
     if strip is None:
         return
     active_strip = get_strip()
-    for i in range(LED_COUNT):
+    count = active_strip.count if hasattr(active_strip, 'count') else LED_COUNT
+    for i in range(count):
         active_strip.setPixelColor(i, Color(0, 0, 0))
     if show_now:
         active_strip.show()
@@ -1274,7 +1289,9 @@ def print_status(state: AppState) -> None:
         detail = ""
 
     brightness_pct = int((max(0, state.brightness) / max(1, state.max_brightness)) * 100)
-    print(f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness} ({brightness_pct}%) | {detail}")
+    print(
+        f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness} ({brightness_pct}%) | {detail} | N: {LED_COUNT}"
+    )
 
 
 def maybe_read_key() -> str | None:
@@ -1716,10 +1733,11 @@ def prompt_support_ticket_manager(fd: int, old_settings: Any, state: AppState) -
 
 
 def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = False, force: bool = False) -> str:
+    script_path = Path(__file__).resolve().parent / "into.py"
     command: list[str] = [
         "nohup",
         sys.executable,
-        "into.py",
+        str(script_path),
         "--speed",
         state.speed,
         "--chase-color",
@@ -1770,10 +1788,13 @@ def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = F
     if force:
         command.append("--force")
 
-    command.extend([">", NOHUP_LOG_FILE, "2>&1", "&", "echo", "$!", ">", NOHUP_PID_FILE])
+    # Put redirection and backgrounding inside the final command string.
+    base_cmd = " ".join(shlex.quote(part) for part in command)
+    full_cmd = f"{base_cmd} > {NOHUP_LOG_FILE} 2>&1 & echo $! > {NOHUP_PID_FILE}"
+
     if use_sudo:
-        command.insert(0, "sudo")
-    return " ".join(command)
+        return f"sudo sh -c {shlex.quote(full_cmd)}"
+    return full_cmd
 
 
 def print_nohup_command_block(command: str) -> None:
@@ -1787,15 +1808,94 @@ def print_nohup_command_block(command: str) -> None:
     sys.stdout.flush()
 
 
-def get_default_nohup_script_path() -> Path:
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"nohup_{now}.sh"
+def _sanitize_filename_part(value: str) -> str:
+    safe = value.lower().replace(" ", "_").replace("/", "_")
+    safe = re.sub(r"[^a-z0-9_\-]", "", safe)
+    return safe or "default"
+
+
+def get_pattern_color_label(state: AppState) -> str:
+    if state.pattern == "-1":
+        return "sos"
+    if state.pattern == "1":
+        return CHASE_COLORS.get(state.chase_color, ("unknown", 0))[0]
+    if state.pattern in {"2", "4"}:
+        return RANDOM_PALETTES.get(state.random_palette, ("unknown", None))[0]
+    if state.pattern == "3":
+        return BOUNCE_COLORS.get(state.bounce_color, ("unknown", 0))[0]
+    if state.pattern == "7":
+        return "rainbow"
+    if state.pattern in {"5", "6", "8", "9", "10", "11", "12", "13"}:
+        if state.effect_color == "9":
+            if state.custom_color != 0:
+                r = (state.custom_color >> 16) & 0xFF
+                g = (state.custom_color >> 8) & 0xFF
+                b = state.custom_color & 0xFF
+                return f"custom_{r:02x}{g:02x}{b:02x}"
+            return "custom"
+        return EFFECT_COLORS.get(state.effect_color, ("unknown", 0))[0]
+    return PATTERN_NAMES.get(state.pattern, "unknown").lower()
+
+
+def _is_night_schedule(on_time: str, off_time: str) -> bool:
+    """Return True if the schedule describes an overnight range (e.g. 20:00-06:00)."""
+    try:
+        on_h, on_m = parse_time_hhmm(on_time)
+        off_h, off_m = parse_time_hhmm(off_time)
+    except ValueError:
+        return False
+    return (on_h, on_m) > (off_h, off_m)
+
+
+def get_default_nohup_script_path(state: AppState | None = None, options: RunOptions | None = None) -> Path:
+    if state is None:
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"nohup_{now}.sh"
+        return Path(NOHUP_SCRIPTS_DIR) / file_name
+
+    color_label = _sanitize_filename_part(get_pattern_color_label(state))
+    brightness = str(state.brightness)
+    speed = str(state.speed)
+
+    prefix = ""
+    # Saved script names should reflect feature mode.
+    # For scheduled runs, include a clear day prefix in the filename.
+    if hasattr(state, "input_mode") and state.input_mode == "off":
+        # keep as standard
+        pass
+    if getattr(state, "led_count", LED_COUNT) and getattr(state, "led_count", LED_COUNT) != LED_COUNT:
+        # Include count when non-default and e.g. foot-based override was set.
+        color_label = f"{color_label}_{state.led_count}"
+
+    if getattr(state, "emergency_only", False):
+        prefix = "sos"
+    elif state.brightness == 0:
+        prefix = "off"
+    elif getattr(state, "emergency_only", False) is False and getattr(state, "input_mode", "off") == "off" and getattr(state, "rainbow_offset", None) is not None:
+        prefix = "day" if True else ""
+
+    # Schedule-enabled flows embed day/night context based on the configured window.
+    if options and options.schedule_enabled:
+        if options.schedule_on_time == options.schedule_off_time:
+            prefix = "always"
+        elif _is_night_schedule(options.schedule_on_time, options.schedule_off_time):
+            prefix = "night"
+        else:
+            prefix = "day"
+    elif getattr(state, "schedule_enabled", False):
+        prefix = "day"
+
+    if prefix:
+        file_name = f"{prefix}_{color_label}_{brightness}_{speed}.sh"
+    else:
+        file_name = f"{color_label}_{brightness}_{speed}.sh"
+
     return Path(NOHUP_SCRIPTS_DIR) / file_name
 
 
 def save_nohup_script(path: Path, command: str) -> Path:
     script = (
-        "#!/usr/bin/env bash\n"
+        "#!/usr/bin/env sh\n"
         "set -euo pipefail\n\n"
         f"{command}\n"
     )
@@ -1848,17 +1948,31 @@ def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> Non
         tty.setcbreak(fd)
 
 
-def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: RunOptions) -> None:
+def prompt_nohup_tools(
+    fd: int,
+    old_settings: Any,
+    state: AppState,
+    options: RunOptions,
+    auto_save_default: bool = False,
+) -> None:
     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     try:
         cmd = build_nohup_command(state, options)
         cmd_force = build_nohup_command(state, options, force=True)
         sudo_cmd = build_nohup_command(state, options, use_sudo=True)
         sudo_cmd_force = build_nohup_command(state, options, use_sudo=True, force=True)
+
+        if auto_save_default:
+            default_path = get_default_nohup_script_path(state, options)
+            saved = save_nohup_script(default_path, sudo_cmd)
+            print(f"Saved script: {saved}")
+            print(f"Run with: bash {saved}")
+            return
+
         print("\nNohup tools:")
         print("  [p] Print nohup command")
         print("  [f] Print nohup command with --force")
-        print("  [s] Save sudo nohup script (.sh) to scripts/ with timestamp")
+        print("  [s] Save sudo nohup script (.sh) to scripts/ with default state-based name")
         print("  [b] Both print and save")
         print("  [q] Cancel")
         choice = (input("Choose option [p/f/s/b/q] (default p): ").strip().lower() or "p")
@@ -1873,7 +1987,7 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
             print_nohup_command_block(cmd_force)
 
         if choice in {"s", "b"}:
-            default_path = get_default_nohup_script_path()
+            default_path = get_default_nohup_script_path(state, options)
             raw_path = input(f"Script path (default {default_path}): ").strip()
             out_path = Path(raw_path or default_path).expanduser()
             saved = save_nohup_script(out_path, sudo_cmd)
@@ -1946,28 +2060,32 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
 
     # w/s: brightness
     if key == "w":
-        state.brightness = clamp_brightness(state.brightness + 16)
-        set_strip_brightness(state.brightness)
-        print_status(state)
+        if state.brightness < 255:
+            state.brightness = clamp_brightness(state.brightness + BRIGHTNESS_STEP)
+            set_strip_brightness(state.brightness)
+            print_status(state)
         return True
     if key == "s":
-        state.brightness = clamp_brightness(state.brightness - 16)
-        set_strip_brightness(state.brightness)
-        print_status(state)
+        if state.brightness > 0:
+            state.brightness = clamp_brightness(state.brightness - BRIGHTNESS_STEP)
+            set_strip_brightness(state.brightness)
+            print_status(state)
         return True
 
     # +/= speed up, - speed down
     if key in {"+", "="}:
         keys = list(SPEED_LABELS.keys())
         idx = keys.index(state.speed) if state.speed in keys else 4
-        state.speed = keys[min(idx + 1, len(keys) - 1)]
-        print_status(state)
+        if idx < len(keys) - 1:
+            state.speed = keys[idx + 1]
+            print_status(state)
         return True
     if key == "-":
         keys = list(SPEED_LABELS.keys())
         idx = keys.index(state.speed) if state.speed in keys else 4
-        state.speed = keys[max(idx - 1, 0)]
-        print_status(state)
+        if idx > 0:
+            state.speed = keys[idx - 1]
+            print_status(state)
         return True
 
     # Direct pattern selection by digit key
@@ -2007,10 +2125,16 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print_status(state)
         return True
     if key == "\x0f":
-        prompt_nohup_tools(fd, old_settings, state, options)
+        # Ctrl+O: save sudo nohup script to scripts/ directory (as documented).
+        cmd_force = build_nohup_command(state, options, use_sudo=True, force=True)
+        script_path = get_default_nohup_script_path(state, options)
+        saved = save_nohup_script(script_path, cmd_force)
+        print(f"Saved script: {saved}")
+        print(f"Run with: bash {saved}")
         print_status(state)
         return True
     if key in {"o", "O"}:
+        # O/o: print the background nohup command (no script file save).
         cmd = build_nohup_command(state, options)
         print_nohup_command_block(cmd)
         return True
@@ -2183,10 +2307,15 @@ def ask_float(prompt: str, default: float, minimum: float = 0.0) -> float:
 
 def ask_yes_no(prompt: str, default: bool = False) -> bool:
     suffix = "Y/n" if default else "y/N"
-    raw = input(f"{prompt} [{suffix}]: ").strip().lower()
-    if not raw:
-        return default
-    return raw in {"y", "yes", "1", "true"}
+    while True:
+        raw = input(f"{prompt} [{suffix}]: ").strip().lower()
+        if not raw:
+            return default
+        if raw == "y":
+            return True
+        if raw == "n":
+            return False
+        print("Please answer y or n.")
 
 
 def load_headless_config(path: str) -> dict[str, Any]:
@@ -2203,6 +2332,7 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
     payload: dict[str, Any] = {
         "test": bool(test_mode),
         "pattern": state.pattern,
+        "led_count": state.led_count,
         "speed": state.speed,
         "chase_color": state.chase_color,
         "random_palette": state.random_palette,
@@ -2254,6 +2384,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         emergency_only=as_bool(data.get("emergency_only"), False),
         custom_color=as_int(data.get("custom_color"), 0),
         effect_color=as_str(data.get("effect_color"), "9"),
+        led_count=max(1, as_int(data.get("led_count"), LED_COUNT)),
     )
 
     # Now override colors if needed
@@ -2300,7 +2431,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
 
 
 def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
-    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=False)
+    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
     headless_path = HEADLESS_DEFAULT_CONFIG
     if use_headless:
         # Discover JSON files in the `headless/` directory to present as
@@ -2467,8 +2598,8 @@ def parse_args() -> argparse.Namespace:
             "  --duration-seconds SEC     Stop after SEC (0 disables)\n"
             "  --start-delay-seconds SEC  Delay before animation starts\n"
             "  --schedule-enable          Enable ON/OFF time schedule (default DISABLED)\n"
-            "  --schedule-on HH:MM        Local time when lights turn ON  (default 06:00)\n"
-            "  --schedule-off HH:MM       Local time when lights turn OFF (default 22:00)\n"
+            "  --schedule-on HH:MM        Local time when lights turn ON  (default 18:00)\n"
+            "  --schedule-off HH:MM       Local time when lights turn OFF (default 06:00)\n"
             "  --headless                 Load settings from separate JSON\n"
             "  --headless-config FILE     JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
@@ -2504,6 +2635,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pi-input-pin", type=int, help="GPIO BCM pin for digital input")
     parser.add_argument("--analog-path", help="Analog input path, e.g. /sys/bus/iio/.../in_voltage0_raw")
     parser.add_argument("--analog-max", type=int, help="Maximum analog reading for scaling")
+    parser.add_argument("--led-count", type=int, default=None, help="Number of LEDs in the strip (overrides default 120)")
+    parser.add_argument("--led-feet", type=float, default=None, help="Number of feet of strip (converted by 30 LEDs/ft)")
     parser.add_argument("--test", action="store_true", help="Run safe ASCII simulation mode")
     parser.add_argument("--frames", type=int, default=None, help="Stop after N frames (0 runs continuously)")
     parser.add_argument("--duration-seconds", type=float, default=None, help="Stop after duration in seconds")
@@ -2582,6 +2715,10 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         chase_color=args.chase_color or "1",
         random_palette=args.random_palette or "1",
         bounce_color=args.bounce_color or "1",
+        led_count=max(
+            1,
+            int(round((args.led_feet * LEDS_PER_FOOT) if args.led_feet is not None else (args.led_count if args.led_count is not None else LED_COUNT)))
+        ),
         brightness=clamp_brightness(args.brightness if args.brightness is not None else LED_BRIGHTNESS),
         max_brightness=clamp_brightness(args.max_brightness if args.max_brightness is not None else LED_BRIGHTNESS),
         input_mode=args.pi_input_mode or "off",
@@ -2632,6 +2769,14 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
         state.input_mode = args.pi_input_mode
     if args.pi_input_pin is not None:
         state.input_pin = args.pi_input_pin
+    if args.led_count is not None:
+        state.led_count = max(1, args.led_count)
+    if args.led_feet is not None:
+        state.led_count = max(1, int(round(args.led_feet * LEDS_PER_FOOT)))
+    if args.led_count is not None:
+        state.led_count = max(1, args.led_count)
+    if args.led_feet is not None:
+        state.led_count = max(1, int(round(args.led_feet * LEDS_PER_FOOT)))
     if args.analog_path is not None:
         state.analog_path = args.analog_path
     if args.analog_max is not None:
@@ -2729,8 +2874,26 @@ def main() -> None:
         print("Running in --test ASCII mode (hardware disabled).")
         init_virtual_strip()
     else:
-        init_strip()
-    get_strip().begin()
+        try:
+            init_strip()
+        except RuntimeError as exc:
+            print(f"[ERROR] {exc}")
+            print("Falling back to --test ASCII mode (no hardware).")
+            test_mode = True
+            init_virtual_strip()
+
+    try:
+        get_strip().begin()
+    except Exception as exc:
+        print(f"[ERROR] Failed to initialize hardware strip: {exc}")
+        if not test_mode:
+            print("Falling back to --test ASCII mode (no hardware).")
+            test_mode = True
+            init_virtual_strip()
+            get_strip().begin()
+        else:
+            raise
+
     clear_strip(show_now=not test_mode)
     apply_brightness_from_state(state)
 

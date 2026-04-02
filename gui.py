@@ -60,6 +60,7 @@ PREVIEW_FPS  = 25          # target refresh rate for the preview
 APP_VERSION = "0.1.0"
 APP_WEBSITE = "https://github.com/Drizztdowhateva/Lights_Pi_Show"
 DONATE_URL = "https://cash.app/$teerRight"
+SCRIPTS_DIR = Path(__file__).parent / "scripts"
 
 PATTERN_TOOLTIPS: dict[str, str] = {
     "-1": "Emergency SOS — alternating Red/Blue/White panic flash in Morse SOS pattern.",
@@ -207,6 +208,8 @@ class LightsApp(Gtk.Application):
         self._main_window: Gtk.ApplicationWindow | None = None
         self._main_paned: Gtk.Paned | None = None
         self._main_split_ratio: float = 0.40
+        self._headless_script_combo: Gtk.ComboBoxText | None = None
+        self._run_headless_script_btn: Gtk.Button | None = None
         # Schedule widgets
         self._schedule_check: Gtk.CheckButton | None = None
         self._schedule_on_entry: Gtk.Entry | None = None
@@ -449,6 +452,41 @@ class LightsApp(Gtk.Application):
             self._schedule_off_entry.set_text(entry.get_text().strip().zfill(4))
         dialog.destroy()
 
+    def _build_headless_script_section(self) -> Gtk.Box:
+        """Build the Headless Script Presets control section."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+        hdr = Gtk.Label(label="HEADLESS SCRIPT PRESETS")
+        hdr.get_style_context().add_class("section-header")
+        hdr.set_xalign(0)
+        box.pack_start(hdr, False, False, 0)
+
+        self._headless_script_combo = Gtk.ComboBoxText()
+        self._headless_script_combo.set_tooltip_text(
+            "Select a script from scripts/*.sh to run as headless mode."
+        )
+        script_files = []
+        try:
+            script_files = sorted([p for p in SCRIPTS_DIR.glob("*.sh") if p.is_file()])
+            for script in script_files:
+                self._headless_script_combo.append_text(script.name)
+        except Exception:
+            pass
+
+        if script_files:
+            self._headless_script_combo.set_active(0)
+
+        box.pack_start(self._headless_script_combo, False, False, 0)
+
+        self._run_headless_script_btn = Gtk.Button(label="▶ Run selected script")
+        self._run_headless_script_btn.set_tooltip_text(
+            "Execute the selected headless preset script and remove stale PID first."
+        )
+        self._run_headless_script_btn.connect("clicked", self._on_run_headless_script)
+        box.pack_start(self._run_headless_script_btn, False, False, 0)
+
+        return box
+
     def _open_path(self, path: Path) -> None:
         try:
             if sys.platform.startswith("linux"):
@@ -665,6 +703,8 @@ class LightsApp(Gtk.Application):
         sep3 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep3.set_margin_top(6)
         vbox.pack_start(sep3, False, False, 0)
+
+        vbox.pack_start(self._build_headless_script_section(), False, False, 0)
 
         run_hdr = Gtk.Label(label="RUN")
         run_hdr.get_style_context().add_class("section-header")
@@ -1327,6 +1367,37 @@ class LightsApp(Gtk.Application):
                 self._status_label.set_text(msg)
             return False
         GLib.idle_add(_do)
+
+    def _on_run_headless_script(self, _btn: Gtk.Button) -> None:
+        if self._headless_script_combo is None:
+            self._set_status("No headless script selector available.")
+            return
+
+        script_name = self._headless_script_combo.get_active_text()
+        if not script_name:
+            self._set_status("Please select a headless script to run.")
+            return
+
+        script_path = SCRIPTS_DIR / script_name
+        if not script_path.exists():
+            self._set_status(f"Script not found: {script_name}")
+            return
+
+        # Ensure any previously recorded PID is cleaned up so no stale lock remains.
+        pid_file = Path(into.NOHUP_PID_FILE)
+        if pid_file.exists():
+            try:
+                existing_pid = int(pid_file.read_text().strip())
+                if not into.is_pid_running(existing_pid):
+                    pid_file.unlink(missing_ok=True)
+            except Exception:
+                pid_file.unlink(missing_ok=True)
+
+        try:
+            subprocess.Popen(["sudo", "bash", str(script_path)])
+            self._set_status(f"Launched headless script: {script_name}")
+        except Exception as exc:
+            self._set_status(f"Failed to launch script: {exc}")
 
     def _on_window_close(self, _win: Gtk.Window, _event: Any) -> bool:
         self._running.clear()
