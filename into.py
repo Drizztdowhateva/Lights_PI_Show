@@ -625,14 +625,12 @@ def is_within_schedule(options: "RunOptions") -> bool:
     if not options.schedule_enabled:
         return True
     try:
-        on_val = int(options.schedule_on_time)
-        off_val = int(options.schedule_off_time)
-        on_h, on_m = divmod(on_val, 100)
-        off_h, off_m = divmod(off_val, 100)
+        on_h, on_m = parse_time_hhmm(options.schedule_on_time)
+        off_h, off_m = parse_time_hhmm(options.schedule_off_time)
     except (ValueError, AttributeError):
         return True  # malformed time string — treat as always-on
-    on_t = dt_time(on_h % 24, on_m % 60)
-    off_t = dt_time(off_h % 24, off_m % 60)
+    on_t = dt_time(on_h, on_m)
+    off_t = dt_time(off_h, off_m)
     if on_t == off_t:
         return True  # zero-length window — always on
     now = datetime.now().time()
@@ -644,12 +642,21 @@ def is_within_schedule(options: "RunOptions") -> bool:
 
 
 def parse_time_hhmm(value: str) -> tuple[int, int]:
-    if not re.match(r"^\d{2}:\d{2}$", value):
-        raise ValueError(f"Invalid time format: {value}. Expected HH:MM")
-    hour, minute = map(int, value.split(":"))
+    if re.match(r"^\d{2}:\d{2}$", value):
+        hour, minute = map(int, value.split(":"))
+    elif re.match(r"^\d{4}$", value):
+        hour = int(value[:2])
+        minute = int(value[2:])
+    else:
+        raise ValueError(f"Invalid time format: {value}. Expected HH:MM or HHMM")
     if not (0 <= hour < 24 and 0 <= minute < 60):
         raise ValueError(f"Invalid time value: {value}. Hour must be 00-23, minute 00-59")
     return hour, minute
+
+
+def normalize_schedule_time(value: str) -> str:
+    hour, minute = parse_time_hhmm(value)
+    return f"{hour:02d}:{minute:02d}"
 
 
 def validate_run_options(state: AppState, options: RunOptions) -> None:
@@ -1885,6 +1892,12 @@ def get_default_nohup_script_path(state: AppState | None = None, options: RunOpt
     elif getattr(state, "schedule_enabled", False):
         prefix = "day"
 
+    # Add a day number marker for day/night scheduled script names to avoid collisions
+    # and make the schedule context explicit.
+    if prefix in {"day", "night"}:
+        day_counter = datetime.now().strftime("%d")
+        prefix = f"{prefix}{day_counter}"
+
     if prefix:
         file_name = f"{prefix}_{color_label}_{brightness}_{speed}.sh"
     else:
@@ -1924,22 +1937,21 @@ def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> Non
         if enable:
             realtime = datetime.now().strftime('%H%M')
             print(f"CURRENT TIME: (REALTIME) {realtime}")
-            raw_on = input(f"Schedule ON time  (HHMM or HH:MM, 24-hr, current {options.schedule_on_time.zfill(4)}): ").strip()
+            raw_on = input(f"Schedule ON time  (HHMM or HH:MM, 24-hr, current {options.schedule_on_time}): ").strip()
             if raw_on:
-                # Accept both '2350' and '23:50' formats
-                on_val = raw_on.replace(":", "")
-                if len(on_val) == 4 and on_val.isdigit():
-                    options.schedule_on_time = on_val
-                else:
+                try:
+                    on_h, on_m = parse_time_hhmm(raw_on)
+                    options.schedule_on_time = f"{on_h:02d}:{on_m:02d}"
+                except ValueError:
                     print("Invalid ON time format. Please use HHMM or HH:MM (24-hour).")
-            raw_off = input(f"Schedule OFF time (HHMM or HH:MM, 24-hr, current {options.schedule_off_time.zfill(4)}): ").strip()
+            raw_off = input(f"Schedule OFF time (HHMM or HH:MM, 24-hr, current {options.schedule_off_time}): ").strip()
             if raw_off:
-                off_val = raw_off.replace(":", "")
-                if len(off_val) == 4 and off_val.isdigit():
-                    options.schedule_off_time = off_val
-                else:
+                try:
+                    off_h, off_m = parse_time_hhmm(raw_off)
+                    options.schedule_off_time = f"{off_h:02d}:{off_m:02d}"
+                except ValueError:
                     print("Invalid OFF time format. Please use HHMM or HH:MM (24-hour).")
-            print(f"Schedule enabled: ON={options.schedule_on_time.zfill(4)}  OFF={options.schedule_off_time.zfill(4)}")
+            print(f"Schedule enabled: ON={options.schedule_on_time}  OFF={options.schedule_off_time}")
         else:
             print("Schedule disabled — lights run continuously.")
     except (KeyboardInterrupt, EOFError):
@@ -2400,13 +2412,24 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
     raw_schedule_data = data.get("schedule")
     schedule_data = cast(dict[str, Any], raw_schedule_data) if isinstance(raw_schedule_data, dict) else {}
 
+    schedule_on_value = as_str(schedule_data.get("on_time"), "06:00")
+    schedule_off_value = as_str(schedule_data.get("off_time"), "22:00")
+    try:
+        schedule_on_value = normalize_schedule_time(schedule_on_value)
+    except ValueError:
+        schedule_on_value = "06:00"
+    try:
+        schedule_off_value = normalize_schedule_time(schedule_off_value)
+    except ValueError:
+        schedule_off_value = "22:00"
+
     options = RunOptions(
         frames=max(0, as_int(run_data.get("frames"), 0)),
         duration_seconds=max(0.0, as_float(run_data.get("duration_seconds"), 0.0)),
         start_delay_seconds=max(0.0, as_float(run_data.get("start_delay_seconds"), 0.0)),
         schedule_enabled=as_bool(schedule_data.get("enabled"), False),
-        schedule_on_time=as_str(schedule_data.get("on_time"), "06:00"),
-        schedule_off_time=as_str(schedule_data.get("off_time"), "22:00"),
+        schedule_on_time=schedule_on_value,
+        schedule_off_time=schedule_off_value,
     )
     test_mode = as_bool(data.get("test"), False)
 
@@ -2733,13 +2756,24 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
     if args.sos:
         state.pattern = "-1"
     normalize_pattern_for_mode(state)
+    schedule_on = getattr(args, "schedule_on", None) or "18:00"
+    schedule_off = getattr(args, "schedule_off", None) or "06:00"
+    try:
+        schedule_on = normalize_schedule_time(schedule_on)
+    except ValueError:
+        schedule_on = "18:00"
+    try:
+        schedule_off = normalize_schedule_time(schedule_off)
+    except ValueError:
+        schedule_off = "06:00"
+
     options = RunOptions(
         frames=max(0, args.frames if args.frames is not None else 0),
         duration_seconds=max(0.0, args.duration_seconds if args.duration_seconds is not None else 0.0),
         start_delay_seconds=max(0.0, args.start_delay_seconds if args.start_delay_seconds is not None else 0.0),
         schedule_enabled=bool(getattr(args, "schedule_enable", False)),
-        schedule_on_time=getattr(args, "schedule_on", None) or "18:00",
-        schedule_off_time=getattr(args, "schedule_off", None) or "06:00",
+        schedule_on_time=schedule_on,
+        schedule_off_time=schedule_off,
     )
     if options.schedule_enabled and not has_wlan_or_eth0():
         print("[WARN] Schedule enabled in CLI, but no eth0/wlan0 interface found; disabling schedule.")
@@ -2793,9 +2827,15 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
         else:
             print("[WARN] --schedule-enable ignored: no eth0/wlan0 interface found.")
     if getattr(args, "schedule_on", None) is not None:
-        options.schedule_on_time = args.schedule_on
+        try:
+            options.schedule_on_time = normalize_schedule_time(args.schedule_on)
+        except ValueError:
+            print(f"[WARN] Ignoring invalid schedule-on time: {args.schedule_on}")
     if getattr(args, "schedule_off", None) is not None:
-        options.schedule_off_time = args.schedule_off
+        try:
+            options.schedule_off_time = normalize_schedule_time(args.schedule_off)
+        except ValueError:
+            print(f"[WARN] Ignoring invalid schedule-off time: {args.schedule_off}")
     if args.emergency_only:
         state.emergency_only = True
     if args.sos:
