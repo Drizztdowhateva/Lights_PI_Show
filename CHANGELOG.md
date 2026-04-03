@@ -25,6 +25,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `--export-headless` CLI to write current settings to `headless/` (optional name)
 - `--SOS` / `--sos` CLI shortcut for immediate emergency SOS mode
 - Consolidated packaging runtimes in `runtimes/` for AppImage, EXE, and DMG
+- `--headless-script` CLI option to load startup settings directly from saved nohup `.sh` scripts
+- Automatic mapped headless export when saving nohup scripts (`scripts/<name>.sh` -> `headless/<name>.json`)
+- Interactive headless menu now discovers all JSON files and accepts custom `.json` or `.sh` input
 
 ### Changed ✨
 - `runtime.sh` renamed to `Lights.sh` (primary CLI launcher)
@@ -44,6 +47,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `interactive_setup()` lists all 13 patterns, prompts for custom color
 - `parse_args()` updated — new `--pattern` choices, `--custom-color`, `--show-colors`
 - Default headless config path `headless/headless_settings.json`
+- Headless loading path now accepts `.sh` script sources and persists mapped JSON for future runs
 - Pattern `4` maps to `Random` (SOS only via `--SOS` or `--pattern -1`)
 - README fully rewritten for new GUI and CLI features
 - `runtimes/README.md` updated to reflect simplified packaging structure

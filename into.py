@@ -2361,6 +2361,73 @@ def load_headless_config(path: str) -> dict[str, Any]:
         return {}
 
 
+def _extract_into_args_from_script(path: Path) -> list[str]:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    command_line = ""
+    for line in content.splitlines():
+        if "into.py" in line:
+            command_line = line.strip()
+            break
+    if not command_line:
+        return []
+
+    inner = command_line
+    if command_line.startswith("sudo sh -c '") and command_line.endswith("'"):
+        inner = command_line[len("sudo sh -c '") : -1]
+
+    try:
+        tokens = shlex.split(inner)
+    except ValueError:
+        return []
+
+    into_idx = -1
+    for idx, token in enumerate(tokens):
+        if token == "into.py" or token.endswith("/into.py"):
+            into_idx = idx
+            break
+    if into_idx == -1:
+        return []
+
+    args: list[str] = []
+    for token in tokens[into_idx + 1 :]:
+        if token in {">", "1>", "2>", "&", "&&", ";"} or token.startswith(">"):
+            break
+        args.append(token)
+    return args
+
+
+def load_headless_state_from_path(path: str) -> tuple[AppState, RunOptions, bool, str]:
+    source_path = Path(path)
+    if source_path.suffix.lower() == ".sh":
+        args_list = _extract_into_args_from_script(source_path)
+        if not args_list:
+            fallback_data = load_headless_config(HEADLESS_DEFAULT_CONFIG)
+            state, options, test_mode = state_options_from_headless_data(fallback_data)
+            return state, options, test_mode, HEADLESS_DEFAULT_CONFIG
+
+        parsed = parse_args(args_list)
+        test_mode = bool(getattr(parsed, "test", False))
+        if getattr(parsed, "headless", False):
+            data = load_headless_config(getattr(parsed, "headless_config", HEADLESS_DEFAULT_CONFIG))
+            state, options, config_test_mode = state_options_from_headless_data(data)
+            state, options = apply_cli_overrides(state, options, parsed)
+            test_mode = test_mode or config_test_mode
+        else:
+            state, options = state_from_args(parsed)
+
+        mapped_json = mapped_headless_path_for_script(source_path)
+        save_headless_config(str(mapped_json), state, options, test_mode)
+        return state, options, test_mode, str(mapped_json)
+
+    data = load_headless_config(path)
+    state, options, test_mode = state_options_from_headless_data(data)
+    return state, options, test_mode, path
+
+
 def save_headless_config(path: str, state: AppState, options: RunOptions, test_mode: bool) -> None:
     payload: dict[str, Any] = {
         "test": bool(test_mode),
@@ -2478,9 +2545,8 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
     headless_path = HEADLESS_DEFAULT_CONFIG
     if use_headless:
-        # Discover JSON files in the `headless/` directory to present as
-        # selectable options (a-d), with option 'e' to enter a custom path.
-        # Include script-mapped JSON files so they are directly selectable.
+        # Discover JSON files in the `headless/` directory and allow custom input
+        # for either JSON or generated nohup .sh scripts.
         headless_dir = Path("headless")
         json_files = []
         if headless_dir.is_dir():
@@ -2492,36 +2558,34 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         if default_name in json_files:
             json_files.remove(default_name)
 
-        options_list = json_files[:4]
+        options_list = json_files
         print("Select a headless JSON config:")
-        letters = ['a', 'b', 'c', 'd']
-        for i, fname in enumerate(options_list):
-            print(f"{letters[i]}. {fname}")
-        print("e. Enter custom path")
+        for i, fname in enumerate(options_list, start=1):
+            print(f"{i:>2}. {fname}")
+        print(" c. Enter custom path (.json or .sh)")
 
-        choice = input("Choose (a-e, default a): ").strip().lower() or 'a'
+        default_choice = "1" if options_list else "c"
+        choice = input(f"Choose (1-{len(options_list)} or c, default {default_choice}): ").strip().lower() or default_choice
         headless_path = HEADLESS_DEFAULT_CONFIG
-        if choice in letters:
-            idx = letters.index(choice)
-            if idx < len(options_list):
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(options_list):
                 headless_path = str(headless_dir / options_list[idx])
-            else:
-                headless_path = HEADLESS_DEFAULT_CONFIG
-        elif choice == 'e':
+        elif choice == 'c':
             # Show available config/script paths for easier selection.
             print("Available headless JSON configs:")
-            for fname in [default_name] + options_list:
+            visible_configs = [default_name] + options_list
+            for fname in visible_configs:
                 print(f"  - {headless_dir / fname}")
             print("Available nohup scripts:")
             scripts_dir = Path("scripts")
             for script_path in sorted(scripts_dir.glob('*.sh')):
                 print(f"  - {script_path}")
-            entered = input(f"Enter JSON path (default {HEADLESS_DEFAULT_CONFIG}): ").strip()
+            entered = input(f"Enter path (.json or .sh, default {HEADLESS_DEFAULT_CONFIG}): ").strip()
             headless_path = entered or HEADLESS_DEFAULT_CONFIG
 
-        data = load_headless_config(headless_path)
-        state, options, test_mode = state_options_from_headless_data(data)
-        return state, options, test_mode, True, headless_path
+        state, options, test_mode, persisted_path = load_headless_state_from_path(headless_path)
+        return state, options, test_mode, True, persisted_path
 
     print("Select a pattern:")
     for key, name in sorted(PATTERN_NAMES.items(), key=lambda kv: int(kv[0])):
@@ -2628,7 +2692,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     return state, options, test_mode, False, headless_path
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="WS281X LED pattern runner with live keyboard switching.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2654,7 +2718,8 @@ def parse_args() -> argparse.Namespace:
             "  --schedule-on HH:MM        Local time when lights turn ON  (default 18:00)\n"
             "  --schedule-off HH:MM       Local time when lights turn OFF (default 06:00)\n"
             "  --headless                 Load settings from separate JSON\n"
-            "  --headless-config FILE     JSON settings path\n"
+            "  --headless-config FILE     JSON settings path (or .sh script path)\n"
+            "  --headless-script FILE     Saved nohup .sh script to load as startup settings\n"
             "  --emergency-only           Panic flash SOS only mode\n"
             "  --support-export [IDS]     Export task(s) to Copilot queue (IDs comma-separated, blank=open)\n"
             "  --test                     Safe ASCII simulation (no hardware)\n"
@@ -2699,6 +2764,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 06:00)")
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
+    parser.add_argument("--headless-script", default=None, help="Path to saved nohup .sh script to load as startup settings")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
     parser.add_argument("--force", "--override", dest="force", action="store_true", help="Force restart by killing existing instance if running")
     parser.add_argument(
@@ -2723,7 +2789,7 @@ def parse_args() -> argparse.Namespace:
         const="",
         help="Export current settings to headless JSON file (optionally specify name) and exit",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
@@ -2745,6 +2811,7 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.frames is not None,
             args.duration_seconds is not None,
             args.start_delay_seconds is not None,
+            args.headless_script is not None,
             args.emergency_only,
             args.sos,
         ]
@@ -2905,10 +2972,16 @@ def main() -> None:
     used_headless = bool(args.headless)
     headless_path = args.headless_config
 
-    if args.headless:
-        data = load_headless_config(args.headless_config)
-        state, options, config_test_mode = state_options_from_headless_data(data)
+    if args.headless_script:
+        state, options, config_test_mode, mapped_path = load_headless_state_from_path(args.headless_script)
         test_mode = test_mode or config_test_mode
+        used_headless = True
+        headless_path = mapped_path
+        state, options = apply_cli_overrides(state, options, args)
+    elif args.headless:
+        state, options, config_test_mode, mapped_path = load_headless_state_from_path(args.headless_config)
+        test_mode = test_mode or config_test_mode
+        headless_path = mapped_path
         state, options = apply_cli_overrides(state, options, args)
     elif not has_non_interactive_cli_options(args):
         state, options, interactive_test_mode, used_headless, headless_path = interactive_setup()

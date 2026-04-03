@@ -238,6 +238,14 @@ Save current settings to headless JSON:
 python3 into.py --export-headless my_config
 ```
 
+Load startup settings from a saved nohup script (auto-maps to `headless/<script_name>.json`):
+
+```bash
+python3 into.py --headless-script scripts/day_blue_255_2.sh --test
+```
+
+Interactive headless custom mode now accepts either `.json` or `.sh` paths.
+
 ## Schedule (ON/OFF Time)
 
 ## Ctrl+O Nohup save enhancement
@@ -245,6 +253,9 @@ python3 into.py --export-headless my_config
 At runtime, press `Ctrl+O` to open the Nohup tools menu. Choosing `s` or `b` now defaults to saving a script as:
 
 - `scripts/nohup_YYYYMMDD_HHMMSS.sh`
+
+Each saved script now also writes a mapped JSON file in `headless/` using the same base name,
+so it is immediately selectable in headless mode without any manual conversion step.
 
 And appends a timestamped entry to `scripts/saved_nohup_scripts.log`.
 
