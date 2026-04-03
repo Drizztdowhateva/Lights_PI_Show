@@ -2562,16 +2562,16 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         print("Select a headless JSON config:")
         for i, fname in enumerate(options_list, start=1):
             print(f"{i:>2}. {fname}")
-        print(" c. Enter custom path (.json or .sh)")
+        print(" d. More options (custom path / script listing)")
 
-        default_choice = "1" if options_list else "c"
-        choice = input(f"Choose (1-{len(options_list)} or c, default {default_choice}): ").strip().lower() or default_choice
+        default_choice = "1" if options_list else "d"
+        choice = input(f"Choose (1-{len(options_list)} or d, default {default_choice}): ").strip().lower() or default_choice
         headless_path = HEADLESS_DEFAULT_CONFIG
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(options_list):
                 headless_path = str(headless_dir / options_list[idx])
-        elif choice == 'c':
+        elif choice in ('d', 'c'):
             # Show available config/script paths for easier selection.
             print("Available headless JSON configs:")
             visible_configs = [default_name] + options_list
