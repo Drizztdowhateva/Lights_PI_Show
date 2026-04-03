@@ -1,0 +1,29 @@
+{
+  "test": false,
+  "pattern": "3",
+  "led_count": 120,
+  "speed": "6",
+  "chase_color": "1",
+  "random_palette": "1",
+  "bounce_color": "1",
+  "brightness": 255,
+  "max_brightness": 255,
+  "emergency_only": false,
+  "custom_color": 0,
+  "input": {
+    "mode": "off",
+    "pin": 23,
+    "analog_path": "/sys/bus/iio/devices/iio:device0/in_voltage0_raw",
+    "analog_max": 4095
+  },
+  "run": {
+    "frames": 0,
+    "duration_seconds": 0.0,
+    "start_delay_seconds": 0.0
+  },
+  "schedule": {
+    "enabled": false,
+    "on_time": "18:00",
+    "off_time": "06:00"
+  }
+}

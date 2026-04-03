@@ -1924,6 +1924,24 @@ def save_nohup_script(path: Path, command: str) -> Path:
     return path
 
 
+def mapped_headless_path_for_script(script_path: Path) -> Path:
+    # Keep mapped configs in headless/ so they are discoverable in interactive mode.
+    return Path("headless") / f"{script_path.stem}.json"
+
+
+def save_nohup_script_with_mapped_headless(
+    path: Path,
+    command: str,
+    state: "AppState",
+    options: "RunOptions",
+    test_mode: bool = False,
+) -> tuple[Path, Path]:
+    saved_script = save_nohup_script(path, command)
+    mapped_json = mapped_headless_path_for_script(saved_script)
+    save_headless_config(str(mapped_json), state, options, test_mode)
+    return saved_script, mapped_json
+
+
 def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> None:
     """Interactive prompt to configure the ON/OFF schedule at runtime."""
     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -1976,8 +1994,9 @@ def prompt_nohup_tools(
 
         if auto_save_default:
             default_path = get_default_nohup_script_path(state, options)
-            saved = save_nohup_script(default_path, sudo_cmd)
+            saved, mapped_json = save_nohup_script_with_mapped_headless(default_path, sudo_cmd, state, options)
             print(f"Saved script: {saved}")
+            print(f"Mapped headless JSON: {mapped_json}")
             print(f"Run with: bash {saved}")
             return
 
@@ -2002,8 +2021,9 @@ def prompt_nohup_tools(
             default_path = get_default_nohup_script_path(state, options)
             raw_path = input(f"Script path (default {default_path}): ").strip()
             out_path = Path(raw_path or default_path).expanduser()
-            saved = save_nohup_script(out_path, sudo_cmd)
+            saved, mapped_json = save_nohup_script_with_mapped_headless(out_path, sudo_cmd, state, options)
             print(f"Saved script: {saved}")
+            print(f"Mapped headless JSON: {mapped_json}")
             print(f"Run with: bash {saved}")
     except (KeyboardInterrupt, EOFError):
         print("Nohup tools canceled.")
@@ -2140,8 +2160,9 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         # Ctrl+O: save sudo nohup script to scripts/ directory (as documented).
         cmd_force = build_nohup_command(state, options, use_sudo=True, force=True)
         script_path = get_default_nohup_script_path(state, options)
-        saved = save_nohup_script(script_path, cmd_force)
+        saved, mapped_json = save_nohup_script_with_mapped_headless(script_path, cmd_force, state, options)
         print(f"Saved script: {saved}")
+        print(f"Mapped headless JSON: {mapped_json}")
         print(f"Run with: bash {saved}")
         print_status(state)
         return True
@@ -2459,13 +2480,14 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     if use_headless:
         # Discover JSON files in the `headless/` directory to present as
         # selectable options (a-d), with option 'e' to enter a custom path.
+        # Include script-mapped JSON files so they are directly selectable.
         headless_dir = Path("headless")
         json_files = []
         if headless_dir.is_dir():
-            json_files = sorted([p.name for p in headless_dir.glob('headless_*.json')])
+            json_files = sorted([p.name for p in headless_dir.glob('*.json')])
 
-        # Exclude the default config from the selectable options so all 4 pattern
-        # configs are shown; the default remains accessible via custom path 'e'.
+        # Exclude the default config from the selectable options so custom/script-mapped
+        # presets are prioritized; the default remains accessible via custom path 'e'.
         default_name = Path(HEADLESS_DEFAULT_CONFIG).name
         if default_name in json_files:
             json_files.remove(default_name)
