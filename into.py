@@ -590,8 +590,17 @@ class RunOptions:
     start_delay_seconds: float = 0.0
     # ON/OFF time schedule — disabled by default; uses local host timezone.
     schedule_enabled: bool = False
-    schedule_on_time: str = "0600"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
-    schedule_off_time: str = "2200"  # HHMM — local time when lights turn OFF (e.g. 600 for 6am)
+    schedule_on_time: str = "1800"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
+    schedule_off_time: str = "0600"  # HHMM — local time when lights turn OFF (e.g. 0600 for 6am)
+
+
+def normalize_schedule_time(raw_time: Any, default: str) -> str:
+    if not isinstance(raw_time, str):
+        return default
+    cleaned = raw_time.strip().replace(":", "")
+    if not re.fullmatch(r"\d{1,4}", cleaned):
+        return default
+    return cleaned.zfill(4)
 
 
 def is_within_schedule(options: "RunOptions") -> bool:
@@ -606,8 +615,10 @@ def is_within_schedule(options: "RunOptions") -> bool:
     if not options.schedule_enabled:
         return True
     try:
-        on_val = int(options.schedule_on_time)
-        off_val = int(options.schedule_off_time)
+        on_str = normalize_schedule_time(options.schedule_on_time, "1800")
+        off_str = normalize_schedule_time(options.schedule_off_time, "0600")
+        on_val = int(on_str)
+        off_val = int(off_str)
         on_h, on_m = divmod(on_val, 100)
         off_h, off_m = divmod(off_val, 100)
     except (ValueError, AttributeError):
@@ -2309,8 +2320,8 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         duration_seconds=max(0.0, as_float(run_data.get("duration_seconds"), 0.0)),
         start_delay_seconds=max(0.0, as_float(run_data.get("start_delay_seconds"), 0.0)),
         schedule_enabled=as_bool(schedule_data.get("enabled"), False),
-        schedule_on_time=as_str(schedule_data.get("on_time"), "06:00"),
-        schedule_off_time=as_str(schedule_data.get("off_time"), "22:00"),
+        schedule_on_time=normalize_schedule_time(as_str(schedule_data.get("on_time"), "18:00"), "1800"),
+        schedule_off_time=normalize_schedule_time(as_str(schedule_data.get("off_time"), "06:00"), "0600"),
     )
     test_mode = as_bool(data.get("test"), False)
 
@@ -2434,13 +2445,13 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     start_delay_seconds = ask_float("Timer: start delay seconds", 0.0, 0.0)
 
     schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
-    schedule_on_time = "0600"
-    schedule_off_time = "2200"
+    schedule_on_time = "1800"
+    schedule_off_time = "0600"
     if schedule_enabled:
-        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 0600): ").strip()
-        schedule_on_time = raw_on.zfill(4) if raw_on else "0600"
-        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 2200): ").strip()
-        schedule_off_time = raw_off.zfill(4) if raw_off else "2200"
+        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 1800): ").strip()
+        schedule_on_time = raw_on.zfill(4) if raw_on else "1800"
+        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 0600): ").strip()
+        schedule_off_time = raw_off.zfill(4) if raw_off else "0600"
 
     state = AppState(
         pattern=pattern,
@@ -2494,8 +2505,8 @@ def parse_args() -> argparse.Namespace:
             "  --duration-seconds SEC     Stop after SEC (0 disables)\n"
             "  --start-delay-seconds SEC  Delay before animation starts\n"
             "  --schedule-enable          Enable ON/OFF time schedule (default DISABLED)\n"
-            "  --schedule-on HH:MM        Local time when lights turn ON  (default 06:00)\n"
-            "  --schedule-off HH:MM       Local time when lights turn OFF (default 22:00)\n"
+            "  --schedule-on HH:MM        Local time when lights turn ON  (default 18:00)\n"
+            "  --schedule-off HH:MM       Local time when lights turn OFF (default 06:00)\n"
             "  --headless                 Load settings from separate JSON\n"
             "  --headless-config FILE     JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
@@ -2536,8 +2547,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--duration-seconds", type=float, default=None, help="Stop after duration in seconds")
     parser.add_argument("--start-delay-seconds", type=float, default=None, help="Delay before starting animation")
     parser.add_argument("--schedule-enable", action="store_true", default=False, help="Enable ON/OFF time schedule (default DISABLED)")
-    parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 06:00)")
-    parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 22:00)")
+    parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 18:00)")
+    parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 06:00)")
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
@@ -2628,8 +2639,8 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         duration_seconds=max(0.0, args.duration_seconds if args.duration_seconds is not None else 0.0),
         start_delay_seconds=max(0.0, args.start_delay_seconds if args.start_delay_seconds is not None else 0.0),
         schedule_enabled=bool(getattr(args, "schedule_enable", False)),
-        schedule_on_time=getattr(args, "schedule_on", None) or "06:00",
-        schedule_off_time=getattr(args, "schedule_off", None) or "22:00",
+        schedule_on_time=normalize_schedule_time(getattr(args, "schedule_on", None) or "18:00", "1800"),
+        schedule_off_time=normalize_schedule_time(getattr(args, "schedule_off", None) or "06:00", "0600"),
     )
     return state, options
 
