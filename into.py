@@ -7,6 +7,7 @@ import os
 import random
 import re
 import select
+import shlex
 import shutil
 import signal
 import sys
@@ -40,6 +41,7 @@ NOHUP_PID_FILE = "runtime_live.pid"
 NOHUP_SCRIPT_FILE = "runtime_live_nohup.sh"
 NOHUP_SCRIPTS_DIR = "scripts"
 NOHUP_SAVED_INDEX_FILE = "scripts/saved_nohup_scripts.log"
+REPO_ROOT = Path(__file__).resolve().parent
 GLOBAL_SCRIPTS_ROOT_ENV = "FMP_GLOBAL_SCRIPTS_DIR"
 GLOBAL_SCRIPTS_SUBDIR = "Lights_Pi_Show"
 SUPPORT_TICKET_DIR = "LessonProg"
@@ -106,7 +108,7 @@ def is_pid_running(pid: int) -> bool:
 
 
 def ensure_single_instance(force: bool = False) -> None:
-    pid_file = Path(NOHUP_PID_FILE)
+    pid_file = REPO_ROOT / NOHUP_PID_FILE
     if pid_file.exists():
         try:
             existing_pid = int(pid_file.read_text().strip())
@@ -114,6 +116,10 @@ def ensure_single_instance(force: bool = False) -> None:
             existing_pid = 0
 
         if existing_pid > 0 and is_pid_running(existing_pid):
+            if existing_pid == os.getpid():
+                # The pid file was written by the current process before
+                # it could initialize - treat this as the same instance.
+                return
             if force:
                 print(f"Force-killing existing instance PID {existing_pid}...")
                 try:
@@ -1662,32 +1668,54 @@ def prompt_support_ticket_manager(fd: int, old_settings: Any, state: AppState) -
         tty.setcbreak(fd)
 
 
-def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = False, force: bool = False) -> str:
-    command: list[str] = [
-        "nohup",
-        sys.executable,
-        "into.py",
-        "--speed",
-        state.speed,
-        "--chase-color",
-        state.chase_color,
-        "--random-palette",
-        state.random_palette,
-        "--bounce-color",
-        state.bounce_color,
-        "--brightness",
-        str(state.brightness),
-        "--max-brightness",
-        str(state.max_brightness),
-        "--pi-input-mode",
-        state.input_mode,
-        "--pi-input-pin",
-        str(state.input_pin),
-        "--analog-path",
-        state.analog_path,
-        "--analog-max",
-        str(state.analog_max),
-    ]
+def build_nohup_command(
+    state: AppState,
+    options: RunOptions,
+    use_sudo: bool = False,
+    force: bool = False,
+    headless_config: str | Path | None = None,
+) -> str:
+    repo_root = Path(__file__).resolve().parent
+    if headless_config is not None:
+        config_path = Path(headless_config).expanduser()
+        if not config_path.is_absolute():
+            config_path = repo_root / config_path
+        command: list[str] = [
+            "nohup",
+            sys.executable,
+            str(repo_root / "into.py"),
+            "--headless",
+            "--headless-config",
+            str(config_path),
+        ]
+        if force:
+            command.append("--force")
+    else:
+        command = [
+            "nohup",
+            sys.executable,
+            str(repo_root / "into.py"),
+            "--speed",
+            state.speed,
+            "--chase-color",
+            state.chase_color,
+            "--random-palette",
+            state.random_palette,
+            "--bounce-color",
+            state.bounce_color,
+            "--brightness",
+            str(state.brightness),
+            "--max-brightness",
+            str(state.max_brightness),
+            "--pi-input-mode",
+            state.input_mode,
+            "--pi-input-pin",
+            str(state.input_pin),
+            "--analog-path",
+            state.analog_path,
+            "--analog-max",
+            str(state.analog_max),
+        ]
 
     # Preserve effect color selection for patterns like Theater Chase/Comet/Pulse.
     command.extend(["--effect-color", state.effect_color])
@@ -1717,10 +1745,26 @@ def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = F
     if force:
         command.append("--force")
 
-    command.extend([">", NOHUP_LOG_FILE, "2>&1", "&", "echo", "$!", ">", NOHUP_PID_FILE])
+    command.extend([
+        ">",
+        str(repo_root / NOHUP_LOG_FILE),
+        "2>&1",
+        "&",
+        "echo",
+        "$!",
+        ">",
+        str(repo_root / NOHUP_PID_FILE),
+    ])
+
+    def quote_token(token: str) -> str:
+        if token in {">", "2>&1", "&", "$!"}:
+            return token
+        return shlex.quote(token)
+
+    inner = " ".join(quote_token(token) for token in command)
     if use_sudo:
-        command.insert(0, "sudo")
-    return " ".join(command)
+        return "sudo sh -c " + shlex.quote(inner)
+    return inner
 
 
 def print_nohup_command_block(command: str) -> None:
@@ -1737,7 +1781,14 @@ def print_nohup_command_block(command: str) -> None:
 def get_default_nohup_script_path() -> Path:
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"nohup_{now}.sh"
-    return Path(NOHUP_SCRIPTS_DIR) / file_name
+    script_root = Path(__file__).resolve().parent
+    return script_root / NOHUP_SCRIPTS_DIR / file_name
+
+
+def get_default_headless_config_path() -> Path:
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"headless_{now}.json"
+    return Path(__file__).resolve().parent / "headless" / file_name
 
 
 def save_nohup_script(path: Path, command: str) -> Path:
@@ -1750,9 +1801,10 @@ def save_nohup_script(path: Path, command: str) -> Path:
     path.write_text(script, encoding="utf-8")
     os.chmod(path, 0o750)
 
-    log_dir = Path(NOHUP_SAVED_INDEX_FILE).parent
+    log_index_path = REPO_ROOT / NOHUP_SAVED_INDEX_FILE
+    log_dir = log_index_path.parent
     log_dir.mkdir(parents=True, exist_ok=True)
-    with open(NOHUP_SAVED_INDEX_FILE, "a", encoding="utf-8") as log_file:
+    with open(log_index_path, "a", encoding="utf-8") as log_file:
         log_file.write(f"{datetime.now().isoformat()} saved:{path}\n")
 
     return path
@@ -1806,24 +1858,60 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
         print("  [p] Print nohup command")
         print("  [f] Print nohup command with --force")
         print("  [s] Save sudo nohup script (.sh) to scripts/ with timestamp")
+        print("  [h] Save current runtime state as headless JSON")
+        print("  [u] Save both headless JSON and sudo nohup script")
         print("  [b] Both print and save")
         print("  [q] Cancel")
-        choice = (input("Choose option [p/f/s/b/q] (default p): ").strip().lower() or "p")
+        choice = (input("Choose option [p/f/s/h/u/b/q] (default p): ").strip().lower() or "p")
 
         if choice == "q":
             print("Nohup tools canceled.")
             return
 
-        if choice in {"p", "b"}:
+        if choice in {"p", "b", "u"}:
             print_nohup_command_block(cmd)
         if choice == "f":
             print_nohup_command_block(cmd_force)
 
-        if choice in {"s", "b"}:
+        if choice in {"h", "u"}:
+            default_path = get_default_headless_config_path()
+            raw_path = input(f"Headless JSON path (default {default_path}): ").strip()
+            if raw_path:
+                requested_path = Path(raw_path).expanduser()
+                if not requested_path.is_absolute():
+                    root_dir = Path(__file__).resolve().parent
+                    if requested_path.parent == Path('.'):
+                        headless_path = root_dir / "headless" / requested_path
+                    else:
+                        headless_path = root_dir / requested_path
+                else:
+                    headless_path = requested_path
+            else:
+                headless_path = default_path
+            headless_path.parent.mkdir(parents=True, exist_ok=True)
+            save_headless_config(str(headless_path), state, options, False)
+            print(f"Saved headless config: {headless_path}")
+
+        if choice in {"s", "b"} or choice == "u":
+            if choice == "u":
+                script_cmd = build_nohup_command(state, options, use_sudo=True, headless_config=headless_path)
+            else:
+                script_cmd = sudo_cmd
             default_path = get_default_nohup_script_path()
             raw_path = input(f"Script path (default {default_path}): ").strip()
-            out_path = Path(raw_path or default_path).expanduser()
-            saved = save_nohup_script(out_path, sudo_cmd)
+            if raw_path:
+                requested_path = Path(raw_path).expanduser()
+                if not requested_path.is_absolute():
+                    root_dir = Path(__file__).resolve().parent
+                    if requested_path.parent == Path('.'):
+                        out_path = root_dir / NOHUP_SCRIPTS_DIR / requested_path
+                    else:
+                        out_path = root_dir / requested_path
+                else:
+                    out_path = requested_path
+            else:
+                out_path = default_path
+            saved = save_nohup_script(out_path, script_cmd)
             print(f"Saved script: {saved}")
             print(f"Run with: bash {saved}")
     except (KeyboardInterrupt, EOFError):
