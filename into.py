@@ -18,10 +18,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+# Import CLI utilities for enhanced user experience
+try:
+    from cli_utils import (
+        Colors, ProgressBar, StatusDisplay, CommandHistory, ConfigProfile,
+        colored_print, success_print, error_print, warning_print, info_print,
+        show_enhanced_help, status_display, command_history, config_profiles
+    )
+    _HAVE_CLI_UTILS = True
+except ImportError:
+    _HAVE_CLI_UTILS = False
+    # Fallback functions if CLI utils not available
+    def colored_print(text, color='', bold=False): print(text)
+    def success_print(text): print(f"✓ {text}")
+    def error_print(text): print(f"✗ {text}")
+    def warning_print(text): print(f"⚠ {text}")
+    def info_print(text): print(f"ℹ {text}")
+    def show_enhanced_help(): pass
+
 try:
     from rpi_ws281x import Adafruit_NeoPixel, Color  # type: ignore[import-not-found]
     _HAVE_RPI_WS281X = True
-except Exception:
+except ImportError as e:
     Adafruit_NeoPixel = None  # type: ignore[assignment]
     def Color(r: int, g: int, b: int) -> int:  # minimal fallback for ASCII mode
         return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF)
@@ -109,16 +127,27 @@ def is_pid_running(pid: int) -> bool:
 
 def ensure_single_instance(force: bool = False) -> None:
     pid_file = REPO_ROOT / NOHUP_PID_FILE
+    temp_pid_file = REPO_ROOT / f"{NOHUP_PID_FILE}.{os.getpid()}.tmp"
+    
+    # Try to create temp file atomically to establish our intent
+    try:
+        temp_pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError as e:
+        print(f"Error creating temporary PID file: {e}")
+        sys.exit(1)
+    
+    # Check for existing PID file
     if pid_file.exists():
         try:
             existing_pid = int(pid_file.read_text().strip())
-        except Exception:
+        except (ValueError, OSError) as e:
             existing_pid = 0
 
         if existing_pid > 0 and is_pid_running(existing_pid):
             if existing_pid == os.getpid():
                 # The pid file was written by the current process before
                 # it could initialize - treat this as the same instance.
+                temp_pid_file.unlink(missing_ok=True)
                 return
             if force:
                 print(f"Force-killing existing instance PID {existing_pid}...")
@@ -126,9 +155,11 @@ def ensure_single_instance(force: bool = False) -> None:
                     os.kill(existing_pid, signal.SIGTERM)
                 except PermissionError:
                     print(f"Permission denied killing PID {existing_pid}.")
+                    temp_pid_file.unlink(missing_ok=True)
                     sys.exit(1)
                 except OSError as e:
                     print(f"Unable to kill PID {existing_pid}: {e}")
+                    temp_pid_file.unlink(missing_ok=True)
                     sys.exit(1)
 
                 # wait a moment for graceful stop
@@ -144,6 +175,7 @@ def ensure_single_instance(force: bool = False) -> None:
 
                 print("Existing instance stopped.")
             else:
+                temp_pid_file.unlink(missing_ok=True)
                 print(
                     f"Another Lights Pi Show instance appears to be running (PID {existing_pid})."
                     "\nStop it before starting a new one (e.g., kill <pid> or remove runtime_live.pid)."
@@ -155,7 +187,13 @@ def ensure_single_instance(force: bool = False) -> None:
         except FileNotFoundError:
             pass
 
-    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    # Atomic rename - this is the critical race condition fix
+    try:
+        temp_pid_file.rename(pid_file)
+    except OSError as e:
+        print(f"Error establishing PID file: {e}")
+        temp_pid_file.unlink(missing_ok=True)
+        sys.exit(1)
 
     def _cleanup_pid_file() -> None:
         try:
@@ -424,7 +462,7 @@ def parse_custom_color(s: str) -> int:
             r, g, b = (int(p.strip()) for p in parts)
             if all(0 <= v <= 255 for v in (r, g, b)):
                 return Color(r, g, b)
-        except ValueError:
+        except ValueError as e:
             pass
     valid_names = ", ".join(sorted(NAMED_COLORS.keys()))
     raise ValueError(
@@ -621,7 +659,7 @@ def is_within_schedule(options: "RunOptions") -> bool:
         off_val = int(off_str)
         on_h, on_m = divmod(on_val, 100)
         off_h, off_m = divmod(off_val, 100)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError) as e:
         return True  # malformed time string — treat as always-on
     on_t = dt_time(on_h % 24, on_m % 60)
     off_t = dt_time(off_h % 24, off_m % 60)
@@ -704,7 +742,7 @@ def init_strip() -> None:
     if not _HAVE_RPI_WS281X:
         raise RuntimeError(
             "rpi_ws281x not installed.\n"
-            "  • Run via the launcher (handles venv automatically):  ./runtime.sh\n"
+            "  • Run via the launcher (handles venv automatically):  ./Lights.sh\n"
             "  • Or set up manually: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt\n"
             "  • To run without hardware (ASCII simulation): add --test"
         )
@@ -714,7 +752,8 @@ def init_strip() -> None:
     # Python exception.  This check works whether the process is root OR the
     # Python binary has been granted cap_sys_rawio via setup_permissions.sh.
     try:
-        open("/dev/mem", "rb").close()
+        with open("/dev/mem", "rb"):
+            pass
     except PermissionError:
         raise RuntimeError(
             "Hardware LED access requires elevated privileges.\n"
@@ -2232,16 +2271,28 @@ def ask_yes_no(prompt: str, default: bool = False) -> bool:
     raw = input(f"{prompt} [{suffix}]: ").strip().lower()
     if not raw:
         return default
-    return raw in {"y", "yes", "1", "true"}
+    if raw in {"y", "yes", "1", "true"}:
+        return True
+    if raw in {"n", "no", "0", "false"}:
+        return False
+    # Invalid input - show prompt again
+    print(f"Invalid response '{raw}'. Please answer y or n.")
+    return ask_yes_no(prompt, default)
 
 
 def load_headless_config(path: str) -> dict[str, Any]:
     config_path = Path(path)
     if not config_path.exists():
+        print(f"Warning: Config file not found: {path}, using defaults")
         return {}
     try:
-        return json.loads(config_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        content = config_path.read_text(encoding="utf-8")
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Warning: Invalid JSON in config file {path}: {e}, using defaults")
+        return {}
+    except OSError as e:
+        print(f"Warning: Could not read config file {path}: {e}, using defaults")
         return {}
 
 
@@ -2346,7 +2397,20 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
 
 
 def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
-    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=False)
+    # Try to use enhanced prompt system if available
+    try:
+        from enhanced_prompts import enhanced_interactive_setup
+        result = enhanced_interactive_setup()
+        if result is not None and result[0] is not None:  # Valid result
+            return result
+        # Fall back to regular setup if enhanced system fails
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Enhanced prompts unavailable, using standard setup: {e}")
+    
+    # Standard fallback setup
+    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
     headless_path = HEADLESS_DEFAULT_CONFIG
     if use_headless:
         # Discover JSON files in the `headless/` directory to present as
@@ -2379,7 +2443,26 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
                 headless_path = HEADLESS_DEFAULT_CONFIG
         elif choice == 'e':
             entered = input(f"Headless JSON path (default {HEADLESS_DEFAULT_CONFIG}): ").strip()
-            headless_path = entered or HEADLESS_DEFAULT_CONFIG
+            if entered:
+                # Validate path for security - prevent path traversal
+                try:
+                    entered_path = Path(entered)
+                    # Resolve to absolute path and check if it's within reasonable bounds
+                    abs_path = entered_path.resolve()
+                    repo_abs = REPO_ROOT.resolve()
+                    
+                    # Allow paths within the repo or absolute paths that look reasonable
+                    if (abs_path.is_relative_to(repo_abs) or 
+                        (abs_path.suffix == '.json' and not '..' in str(entered_path))):
+                        headless_path = str(abs_path)
+                    else:
+                        print(f"Warning: Path '{entered}' appears unsafe. Using default.")
+                        headless_path = HEADLESS_DEFAULT_CONFIG
+                except (ValueError, OSError):
+                    print(f"Warning: Invalid path '{entered}'. Using default.")
+                    headless_path = HEADLESS_DEFAULT_CONFIG
+            else:
+                headless_path = HEADLESS_DEFAULT_CONFIG
 
         data = load_headless_config(headless_path)
         state, options, test_mode = state_options_from_headless_data(data)
@@ -2698,7 +2781,10 @@ def main() -> None:
     args = parse_args()
 
     if args.show_shortcuts:
-        print(SHORTCUTS_TEXT)
+        if _HAVE_CLI_UTILS:
+            show_enhanced_help()
+        else:
+            print(SHORTCUTS_TEXT)
         return
 
     if args.show_colors:
@@ -2707,13 +2793,18 @@ def main() -> None:
 
     if args.support_export is not None:
         raw_ids = args.support_export or ""
+        if _HAVE_CLI_UTILS:
+            progress = ProgressBar(100, 50, "Exporting tasks")
+            progress.update(50)
         store_path, queue_path, sent_count = send_tasks_to_copilot(raw_ids)
+        if _HAVE_CLI_UTILS:
+            progress.update(100)
         if sent_count > 0:
-            print(f"Sent {sent_count} task(s) to Copilot queue: {queue_path}")
-            print(f"Task store updated: {store_path}")
+            success_print(f"Sent {sent_count} task(s) to Copilot queue: {queue_path}")
+            info_print(f"Task store updated: {store_path}")
         else:
-            print("No matching tasks to send.")
-            print(f"Task store: {store_path}")
+            warning_print("No matching tasks to send.")
+            info_print(f"Task store: {store_path}")
         return
 
     state: AppState
@@ -2755,21 +2846,61 @@ def main() -> None:
         print(f"Exported headless config to: {out_path}")
         return
 
-    ensure_single_instance(force=args.force)
+    if _HAVE_CLI_UTILS:
+        progress = ProgressBar(4, 50, "Initializing LED system")
+        progress.update(1)
 
-    if test_mode:
-        print("Running in --test ASCII mode (hardware disabled).")
-        init_virtual_strip()
+        ensure_single_instance(force=args.force)
+        progress.update(2)
+
+        if test_mode:
+            info_print("Running in --test ASCII mode (hardware disabled).")
+            init_virtual_strip()
+        else:
+            info_print("Initializing LED hardware...")
+            init_strip()
+        progress.update(3)
+        
+        get_strip().begin()
+        clear_strip(show_now=not test_mode)
+        apply_brightness_from_state(state)
+        progress.update(4)
+
+        if used_headless and not args.headless:
+            info_print(f"Saving headless config to: {headless_path}")
+            save_headless_config(headless_path, state, options, test_mode)
+
+        # Start status monitoring if CLI utils available
+        status_display.update(
+            pattern=PATTERN_NAMES.get(state.pattern, state.pattern),
+            speed=SPEED_LABELS.get(state.speed, state.speed),
+            brightness=state.brightness,
+            color="Custom" if state.custom_color != 0 else "Default",
+            uptime=0.0,
+            fps=0.0
+        )
+        status_display.start_monitoring()
+
+        try:
+            run_loop(state, options)
+        finally:
+            status_display.stop_monitoring()
     else:
-        init_strip()
-    get_strip().begin()
-    clear_strip(show_now=not test_mode)
-    apply_brightness_from_state(state)
+        ensure_single_instance(force=args.force)
 
-    if used_headless and not args.headless:
-        save_headless_config(headless_path, state, options, test_mode)
+        if test_mode:
+            print("Running in --test ASCII mode (hardware disabled).")
+            init_virtual_strip()
+        else:
+            init_strip()
+        get_strip().begin()
+        clear_strip(show_now=not test_mode)
+        apply_brightness_from_state(state)
 
-    run_loop(state, options)
+        if used_headless and not args.headless:
+            save_headless_config(headless_path, state, options, test_mode)
+
+        run_loop(state, options)
 
 
 def _shutdown_handler(signum: int, frame: object) -> None:

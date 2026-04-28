@@ -1,0 +1,202 @@
+{
+  "headless/headless_high_contrast.json": {
+    "name": "headless_high_contrast.json",
+    "path": "headless/headless_high_contrast.json",
+    "description": "High Contrast Mode - Maximum brightness with bold, vibrant colors for maximum visibility",
+    "category": "contrast",
+    "tags": [],
+    "created_time": 1777365266.5347855,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_20260404_232126.json": {
+    "name": "headless_20260404_232126.json",
+    "path": "headless/headless_20260404_232126.json",
+    "description": "Headless 20260404 232126",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5348568,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/blue_255_2_anytime.json": {
+    "name": "blue_255_2_anytime.json",
+    "path": "headless/blue_255_2_anytime.json",
+    "description": "Blue 255 2 Anytime",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5349138,
+    "usage_count": 1,
+    "is_favorite": false
+  },
+  "headless/headless_random_warm.json": {
+    "name": "headless_random_warm.json",
+    "path": "headless/headless_random_warm.json",
+    "description": "Headless Random Warm",
+    "category": "lighting",
+    "tags": [],
+    "created_time": 1777365266.5349672,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_heartbeat_pattern.json": {
+    "name": "headless_heartbeat_pattern.json",
+    "path": "headless/headless_heartbeat_pattern.json",
+    "description": "Heartbeat Pattern - Rhythmic heartbeat-like pulses with red accent colors",
+    "category": "pattern",
+    "tags": [],
+    "created_time": 1777365266.535014,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_cool_focus.json": {
+    "name": "headless_cool_focus.json",
+    "path": "headless/headless_cool_focus.json",
+    "description": "Cool Focus - Cool white and blue tones for concentration and work productivity",
+    "category": "lighting",
+    "tags": [],
+    "created_time": 1777365266.5350573,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_monochrome_contrast.json": {
+    "name": "headless_monochrome_contrast.json",
+    "path": "headless/headless_monochrome_contrast.json",
+    "description": "Monochrome Contrast - Black and white high contrast patterns for maximum visibility",
+    "category": "contrast",
+    "tags": [],
+    "created_time": 1777365266.5350997,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_breathing_pattern.json": {
+    "name": "headless_breathing_pattern.json",
+    "path": "headless/headless_breathing_pattern.json",
+    "description": "Breathing Pattern - Slow pulsing like natural breathing for calming effect",
+    "category": "pattern",
+    "tags": [],
+    "created_time": 1777365266.5351396,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_schedule_example.json": {
+    "name": "headless_schedule_example.json",
+    "path": "headless/headless_schedule_example.json",
+    "description": "Headless Schedule Example",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5351803,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_bounce_blue.json": {
+    "name": "headless_bounce_blue.json",
+    "path": "headless/headless_bounce_blue.json",
+    "description": "Headless Bounce Blue",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5352194,
+    "usage_count": 1,
+    "is_favorite": false
+  },
+  "headless/headless_chase_rainbow.json": {
+    "name": "headless_chase_rainbow.json",
+    "path": "headless/headless_chase_rainbow.json",
+    "description": "Headless Chase Rainbow",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5352576,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_settings.json": {
+    "name": "headless_settings.json",
+    "path": "headless/headless_settings.json",
+    "description": "Headless Settings",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365266.5352967,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_sunset_simulation.json": {
+    "name": "headless_sunset_simulation.json",
+    "path": "headless/headless_sunset_simulation.json",
+    "description": "Sunset Simulation - Gradual dimming with warm orange and red colors mimicking natural sunset",
+    "category": "time-based",
+    "tags": [],
+    "created_time": 1777365266.5353363,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_sunrise_simulation.json": {
+    "name": "headless_sunrise_simulation.json",
+    "path": "headless/headless_sunrise_simulation.json",
+    "description": "Sunrise Simulation - Gradual brightening with warm colors mimicking natural sunrise",
+    "category": "time-based",
+    "tags": [],
+    "created_time": 1777365266.5353765,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_emergency_sos_red.json": {
+    "name": "headless_emergency_sos_red.json",
+    "path": "headless/headless_emergency_sos_red.json",
+    "description": "Headless Emergency Sos Red",
+    "category": "emergency",
+    "tags": [],
+    "created_time": 1777365266.5354145,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_low_contrast.json": {
+    "name": "headless_low_contrast.json",
+    "path": "headless/headless_low_contrast.json",
+    "description": "Low Contrast Mode - Subtle colors with reduced brightness for gentle ambient lighting",
+    "category": "contrast",
+    "tags": [],
+    "created_time": 1777365266.5354526,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_warm_evening.json": {
+    "name": "headless_warm_evening.json",
+    "path": "headless/headless_warm_evening.json",
+    "description": "Warm Evening - Warm, cozy evening lighting with orange and amber tones",
+    "category": "lighting",
+    "tags": [],
+    "created_time": 1777365266.5354908,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_daylight_balanced.json": {
+    "name": "headless_daylight_balanced.json",
+    "path": "headless/headless_daylight_balanced.json",
+    "description": "Daylight Balanced - Natural daylight color temperature for clear, neutral lighting",
+    "category": "lighting",
+    "tags": [],
+    "created_time": 1777365266.5355294,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_bounce_blue_classic.json": {
+    "name": "headless_bounce_blue_classic.json",
+    "path": "headless/headless_bounce_blue_classic.json",
+    "description": "Classic blue bounce pattern with maximum brightness for anytime use",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365824.0384328,
+    "usage_count": 0,
+    "is_favorite": false
+  },
+  "headless/headless_wave_motion_subtle.json": {
+    "name": "headless_wave_motion_subtle.json",
+    "path": "headless/headless_wave_motion_subtle.json",
+    "description": "Subtle wave motion pattern with low brightness for evening ambiance",
+    "category": "general",
+    "tags": [],
+    "created_time": 1777365824.038501,
+    "usage_count": 0,
+    "is_favorite": false
+  }
+}

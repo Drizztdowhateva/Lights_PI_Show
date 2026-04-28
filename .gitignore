@@ -9,3 +9,9 @@ venv/
 runtime_live.log
 runtime_live.pid
 runtime_nohup_test.log
+
+# Ignore local VS Code workspace files
+*.code-workspace
+
+# Ignore local VS Code settings folders
+.vscode/

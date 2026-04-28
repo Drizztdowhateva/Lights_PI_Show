@@ -1,15 +1,15 @@
 {
   "test": false,
-  "pattern": "3",
-  "led_count": 120,
-  "speed": "2",
+  "pattern": "1",
+  "speed": "6",
   "chase_color": "1",
   "random_palette": "1",
   "bounce_color": "1",
-  "brightness": 255,
-  "max_brightness": 255,
+  "brightness": 200,
+  "max_brightness": 230,
   "emergency_only": false,
-  "custom_color": 0,
+  "custom_color": 16777215,
+  "effect_color": "1",
   "input": {
     "mode": "off",
     "pin": 23,
@@ -21,9 +21,5 @@
     "duration_seconds": 0.0,
     "start_delay_seconds": 0.0
   },
-  "schedule": {
-    "enabled": false,
-    "on_time": "06:00",
-    "off_time": "22:00"
-  }
+  "description": "Daylight Balanced - Natural daylight color temperature for clear, neutral lighting"
 }

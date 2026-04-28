@@ -1,0 +1,76 @@
+== Lights PI Show ===
+Tip: Press O while running to print the background (nohup) launch command.
+     Press q or Ctrl+C to quit.
+
+Note: hardware LED access requires elevated privileges.
+  • Run with sudo:                sudo ./Lights.sh
+  • Or grant capabilities once:   sudo bash setup_permissions.sh
+
+Creating virtual environment at /home/blackmox/code/LightsPiShow/.venv ...
+^C
+┌─[blackmox@NodeDV5] - [~/code/LightsPiShow] - [Thu Apr 23, 02:36]
+└─[$]> ./Lights.sh --test
+=== Lights PI Show ===
+Tip: Press O while running to print the background (nohup) launch command.
+     Press q or Ctrl+C to quit.
+
+Note: hardware LED access requires elevated privileges.
+  • Run with sudo:                sudo ./Lights.sh
+  • Or grant capabilities once:   sudo bash setup_permissions.sh
+
+Creating virtual environment at /home/blackmox/code/LightsPiShow/.venv ...
+Install/upgrade Python dependencies from requirements.txt? [Y/n] n
+Headless config mode (load JSON settings)? [y/N]: 
+Select a pattern:
+   -1. Emergency SOS
+    1. Chase
+    2. Random
+    3. Bounce
+    4. Random Wipe
+    5. Comet
+    6. Theater Chase
+    7. Rainbow Sweep
+    8. Pulse
+    9. Sparkle
+   10. Fire Flame
+   11. Meteor Shower
+   12. Twinkle Stars
+   13. Blink
+Enter pattern (-1, 1, 2, 4, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, default 1): 13
+Enter speed (0=Constant, 1..9=Level) (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, default 5): 
+Chase color: 1=Orange  2=Green  3=Blue  4=Rainbow  5=Custom
+Chase color (1, 2, 3, 4, 5, default 1): 
+Random palette: 1=Any RGB  2=Warm  3=Cool  4=Pastel  5=Neon  6=Ocean  7=Fire  8=Forest
+Random palette (1, 2, 3, 4, 5, 6, 7, 8, default 1): 
+Bounce color: 1=Blue  2=Purple  3=White  4=Rainbow  5=Custom
+Bounce color (1, 2, 3, 4, 5, default 1): 
+Set a custom color for this pattern? [y/N]: 
+Maximum brightness (0-255) (default 255): 
+Startup brightness (0-255) (default 255): 
+Pi input mode (off/digital/analog) (off, digital, analog, default off): 
+Digital GPIO BCM pin (default 23): 
+Analog input sysfs path (blank for default): 
+Analog max value (default 4095): 
+Emergency-only mode (panic SOS only)? [y/N]: 
+Run in ASCII --test mode? [y/N]: 
+Timer: frames (0=continuous) (default 0): 
+Timer: duration seconds (0=disabled) (default 0.0): 
+Timer: start delay seconds (default 0.0): 
+Enable ON/OFF time schedule? [y/N]: 
+Running in --test ASCII mode (hardware disabled).
+Test mode: realtime ASCII overlay (press q to quit).
+Pattern: Blink | Speed: Level 5 | Brightness: 255 (100%) | 
+Traceback (most recent call last):
+  File "/home/blackmox/code/LightsPiShow/into.py", line 2785, in <module>
+    main()
+    ~~~~^^
+  File "/home/blackmox/code/LightsPiShow/into.py", line 2772, in main
+    run_loop(state, options)
+    ~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/home/blackmox/code/LightsPiShow/into.py", line 2187, in run_loop
+    run_pattern_step(state)
+    ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/home/blackmox/code/LightsPiShow/into.py", line 2097, in run_pattern_step
+    pattern_step_blink(state)
+    ^^^^^^^^^^^^^^^^^^
+NameError: name 'pattern_step_blink' is not defined. Did you mean: 'pattern_step_bounce'?

@@ -1,14 +1,15 @@
 {
   "test": false,
-  "pattern": "7",
+  "pattern": "1",
   "speed": "7",
-  "chase_color": "1",
-  "random_palette": "1",
-  "bounce_color": "1",
-  "brightness": 32,
-  "max_brightness": 255,
+  "chase_color": "3",
+  "random_palette": "3",
+  "bounce_color": "3",
+  "brightness": 180,
+  "max_brightness": 210,
   "emergency_only": false,
-  "custom_color": 0,
+  "custom_color": 255,
+  "effect_color": "3",
   "input": {
     "mode": "off",
     "pin": 23,
@@ -20,9 +21,5 @@
     "duration_seconds": 0.0,
     "start_delay_seconds": 0.0
   },
-  "schedule": {
-    "enabled": true,
-    "on_time": "1800",
-    "off_time": "0600"
-  }
+  "description": "Cool Focus - Cool white and blue tones for concentration and work productivity"
 }

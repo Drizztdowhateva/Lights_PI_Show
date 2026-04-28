@@ -1,0 +1,25 @@
+{
+  "test": false,
+  "pattern": "1",
+  "speed": "8",
+  "chase_color": "1",
+  "random_palette": "1",
+  "bounce_color": "1",
+  "brightness": 255,
+  "max_brightness": 255,
+  "emergency_only": false,
+  "custom_color": 16777215,
+  "effect_color": "1",
+  "input": {
+    "mode": "off",
+    "pin": 23,
+    "analog_path": "/sys/bus/iio/devices/iio:device0/in_voltage0_raw",
+    "analog_max": 4095
+  },
+  "run": {
+    "frames": 0,
+    "duration_seconds": 0.0,
+    "start_delay_seconds": 0.0
+  },
+  "description": "Monochrome Contrast - Black and white high contrast patterns for maximum visibility"
+}

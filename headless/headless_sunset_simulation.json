@@ -1,0 +1,25 @@
+{
+  "test": false,
+  "pattern": "8",
+  "speed": "2",
+  "chase_color": "2",
+  "random_palette": "7",
+  "bounce_color": "2",
+  "brightness": 180,
+  "max_brightness": 220,
+  "emergency_only": false,
+  "custom_color": 16753920,
+  "effect_color": "2",
+  "input": {
+    "mode": "off",
+    "pin": 23,
+    "analog_path": "/sys/bus/iio/devices/iio:device0/in_voltage0_raw",
+    "analog_max": 4095
+  },
+  "run": {
+    "frames": 0,
+    "duration_seconds": 0.0,
+    "start_delay_seconds": 0.0
+  },
+  "description": "Sunset Simulation - Gradual dimming with warm orange and red colors mimicking natural sunset"
+}

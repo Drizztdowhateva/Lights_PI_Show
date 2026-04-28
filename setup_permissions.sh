@@ -37,7 +37,7 @@ if [ ! -f "$VENV_PYTHON" ]; then
     echo "Error: virtual environment not found at $SCRIPT_DIR/.venv" >&2
     echo "Create it first:" >&2
     echo "  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
-    echo "Or run: ./runtime.sh" >&2
+    echo "Or run: ./Lights.sh" >&2
     exit 1
 fi
 
